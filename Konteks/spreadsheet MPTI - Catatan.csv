@@ -1,0 +1,17 @@
+Cara import ke ClickUp (satu sheet = satu list)
+1. Di workspace tujuan buka list yang sesuai > menu Import > Excel/CSV. Pakai file CSV di folder 'csv' (satu file per list) supaya tidak salah sheet; isinya sama dengan sheet di Excel ini.
+"2. Sheet -> list: Roadmap -> Roadmap | Backlog -> Backlog | Bugs -> Bugs (kosong, hanya header) | Sprint 1..6 -> list Sprint 1..6 pada folder proyek (nama list contoh: 'Sprint 1 (10/8/26 - 10/14/26)')."
+3. Petakan kolom: Task ID -> Task ID | Task Name -> Task Name | Subtask IDs -> Subtask IDs | Description -> Description | Assignee -> Assignee | Priority -> Priority | Status -> Status | Start Date -> Start Date | Due Date -> Due Date | Time Estimate -> Time Estimate. Kolom 'Sprint' hanya info (jangan dipetakan).
+"4. Pengaturan: delimiter = koma (assignee dan Subtask IDs sudah dipisah koma tanpa spasi), format tanggal = Year-Month-Day, Priority memakai angka: 1 Urgent, 2 High, 3 Normal, 4 Low."
+5. Hierarki subtask dibuat lewat 'Task ID' dan 'Subtask IDs' (baris yang ID-nya ada di Subtask IDs baris lain menjadi subtask-nya). ID hanya berlaku di dalam satu file/sheet.
+"6. Assignee: nama saja (Hasan Huzaifi, Firdaus Dewansyah, Angilbert Yohanes Sirait, Akhmad Syafiul Anam - nama Akhmad mengikuti Dokumen Inisiasi, sesuaikan jika di workspace berbeda). Jika nama tidak cocok dengan akun di workspace baru, pilih orangnya saat tahap mapping importer (email lebih akurat dari nama)."
+"7. Status memakai status di workspace Anda: Backlog, To Do, In Development, Deployed. Sprint 1: selesai -> Deployed, sedang dikerjakan -> In Development, sisanya To Do. Sprint 2-6: To Do. Cocokkan di tahap mapping status."
+"8. Time Estimate ditulis seperti '1h 30m' / '30m'. Kalau importer tidak membacanya, isi kolom estimasi manual atau abaikan kolom ini."
+
+Isi
+"Penamaan mengikuti contoh folder Split Bill: Epic 'EP-01: ...', story 'EP-01 US-01: ...', tugas peran 'PM - ...', 'BA&QA - ...', 'QA - ...'. Kode WBS ada di akhir nama; SM/PO diganti PM dan BA&QA."
+"Sprint 1 disamakan dengan kondisi di workspace per 15 Okt 2026: Deployed = Planning, Requirement Gathering (+2 subtask), Risk Register, Koordinasi, Validasi User Story; In Development = QA Test Plan, Daily Standup; To Do = EP-01 US-01 (+subtask), Review & Retrospective. Backlog tidak memuat item Sprint 1 karena sudah ada di workspace."
+"Backlog = story Sprint 2-6 (15 story) + PM - Penyusunan Project Charter (belum punya jadwal). Sheet Sprint berisi tugas peran, story sprint tersebut, dan subtask-nya. Karena sprint mengambil dari Backlog, story muncul di Backlog dan di sheet sprint-nya: jika list sprint sudah Anda isi, jangan import baris story yang sama ke Backlog (kolom 'Sprint' membantu memfilter), atau pakai 'Add to list' di ClickUp."
+ASUMSI tanggal: Sprint 1 = 8-14 Okt 2026; Sprint 2 = 15-21 Okt; Sprint 3 = 22-28 Okt; Sprint 4 = 29 Okt-4 Nov; Sprint 5 = 5-11 Nov; Sprint 6 = 12-18 Nov. Due date = akhir sprint target (Sprint 1 per task).
+"ASUMSI isi: subtask WBS 2.1-5.5 saya pecah sendiri (jumlah jam subtask = estimasi story). Tugas PM Sprint 2-6, serah terima, dan demo akhir berasal dari RACI/Milestone, jamnya estimasi awal di luar jam WBS (kapasitas 96 jam) - cek ulang beban tim."
+Catatan: di ClickUp lama [WBS 1.2] tercatat sebagai subtask [WBS 1.3]; di sini dijadikan story terpisah.
