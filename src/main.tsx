@@ -18,6 +18,7 @@ import Dashboard from './pages/Dashboard';
 import KamarPage from './pages/Kamar';
 import PenghuniPage from './pages/Penghuni';
 import ProfilPage from './pages/Profil';
+import TagihanPage from './pages/Tagihan';
 
 const navItems = [
   { name: 'Dashboard', label: 'dashboard', Icon: MdDashboard },
@@ -28,7 +29,7 @@ const navItems = [
   { name: 'Profil Admin', label: 'profil admin', Icon: MdAccountCircle },
 ];
 
-const READY = new Set(['Dashboard', 'Kamar', 'Penghuni', 'Profil Admin']);
+const READY = new Set(['Dashboard', 'Kamar', 'Penghuni', 'Tagihan', 'Profil Admin']);
 
 type Nav = { page: string; action?: 'tambah'; kamarId?: number; n: number };
 
@@ -217,6 +218,7 @@ function App() {
             />
           )}
           {page === 'Penghuni' && <PenghuniPage key={nav.n} notify={notify} presetKamarId={nav.kamarId} />}
+          {page === 'Tagihan' && <TagihanPage key={nav.n} notify={notify} />}
           {page === 'Profil Admin' && (
             <ProfilPage key={nav.n} notify={notify} onProfileChanged={loadAdmin} />
           )}

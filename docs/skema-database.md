@@ -8,6 +8,8 @@ Migration: [`server/migrations/001_kamar_penghuni.sql`](../server/migrations/001
 ```mermaid
 erDiagram
     KAMAR ||--o{ PENGHUNI : "dihuni oleh"
+    PENGHUNI ||--o{ TAGIHAN : "ditagih kepada"
+    KAMAR ||--o{ TAGIHAN : "objek sewa"
     KAMAR {
         INTEGER id PK
         TEXT nomor UK "unik, case-insensitive"
@@ -28,37 +30,35 @@ erDiagram
         INTEGER aktif "1 = aktif, 0 = keluar"
         TEXT created_at
     }
+    TAGIHAN {
+        INTEGER id PK
+        INTEGER penghuni_id FK
+        INTEGER kamar_id FK
+        TEXT bulan "YYYY-MM"
+        INTEGER nominal "harga sewa kamar"
+        TEXT status "Belum Lunas | Lunas"
+        TEXT jatuh_tempo "YYYY-MM-DD"
+        TEXT tanggal_bayar "null bila belum"
+        TEXT metode_pembayaran "Tunai / Transfer"
+        TEXT catatan "opsional"
+        TEXT created_at
+        TEXT updated_at
+    }
 ```
 
-**Kardinalitas:** 1 kamar memiliki 0..N penghuni sepanjang waktu (riwayat), tetapi **maksimal 1 penghuni aktif** pada satu waktu (unique partial index `ux_penghuni_kamar_aktif`). Setiap penghuni hanya terhubung ke 1 kamar.
+**Kardinalitas:**
+- 1 kamar memiliki 0..N penghuni sepanjang waktu (riwayat), tetapi **maksimal 1 penghuni aktif** pada satu waktu (`ux_penghuni_kamar_aktif`).
+- 1 penghuni memiliki 0..N tagihan bulanan (1 tagihan per bulan kalender, dicegah ganda oleh `ux_tagihan_penghuni_bulan`).
 
-## Aturan status kamar
+## Aturan tagihan bulanan (Sprint 3 · EP-02)
 
 | Kejadian | Aturan | Implementasi |
 | :-- | :-- | :-- |
-| Kamar baru dibuat | Status awal `Kosong` | `DEFAULT 'Kosong'` |
-| Penghuni aktif didaftarkan | Kamar → `Terisi` | trigger `trg_penghuni_masuk` |
-| Daftar ke kamar `Terisi` | Ditolak | trigger `trg_penghuni_cek_kamar_kosong` + unique index |
-| Penghuni dicatat keluar (`aktif` 1→0) | Kamar → `Kosong` | trigger `trg_penghuni_keluar` |
-| Hapus kamar `Terisi` | Ditolak | trigger `trg_kamar_hapus_terisi` |
-
-Aturan dijaga di level database, sehingga tetap konsisten walaupun data diubah di luar API.
-
-## Pemetaan ke acceptance criteria
-
-| Acceptance criteria | Dijamin oleh |
-| :-- | :-- |
-| Nomor kamar tidak boleh duplikat | `UNIQUE COLLATE NOCASE` + respons 409 |
-| Field wajib (nomor, tipe, harga) | `NOT NULL`, `CHECK (harga > 0)` + validasi API (422) |
-| Satu penghuni hanya terhubung ke satu kamar aktif | FK `kamar_id` tunggal + unique partial index |
-| Setelah simpan, kamar menjadi "Terisi" | trigger `trg_penghuni_masuk` |
-| Kamar "Terisi" tidak bisa dipilih | trigger + validasi API (409) + opsi disabled di form |
-| Zero-loss data | Penghuni keluar tidak dihapus (soft: `aktif = 0`, `tanggal_keluar`) |
-
-## Kesiapan untuk Sprint berikutnya
-
-- **EP-02 Tagihan:** `kamar.harga` menjadi dasar nominal tagihan; tabel `tagihan` nanti merujuk `penghuni.id` (FK) dan memakai `tanggal_masuk` untuk menghitung jatuh tempo.
-- **EP-03 Keluhan:** tabel `keluhan` merujuk `penghuni.id` dan `kamar.id`.
+| Generate tagihan bulanan | 1 tagihan per penghuni aktif per bulan dengan nominal = harga kamar | `POST /api/tagihan/generate` + `ux_tagihan_penghuni_bulan` |
+| Idempotency tagihan | Tidak ada tagihan ganda untuk penghuni dan bulan yang sama | `UNIQUE (penghuni_id, bulan)` |
+| Tanggal jatuh tempo | Dihitung dari tanggal masuk penghuni pada bulan target | Fungsi `hitungJatuhTempo(tanggalMasuk, bulan)` |
+| Konfirmasi pembayaran | Status berubah menjadi "Lunas", mencatat tanggal dan metode bayar | `PATCH /api/tagihan/:id/lunas` |
+| Pembatalan konfirmasi | Status kembali menjadi "Belum Lunas", tanggal bayar dikosongkan | `PATCH /api/tagihan/:id/batal` |
 
 ## Pertanyaan untuk BA / klien
 

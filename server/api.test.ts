@@ -127,3 +127,117 @@ test('CRUD profil admin (get aktif, tambah, ubah, aktifkan, hapus)', async () =>
   assert.equal((await call('DELETE', `/admin/${baru.body.id}`)).status, 204);
   assert.equal((await call('GET', '/admin/aktif')).body.id, awal.body.id);
 });
+
+// ---------- Sprint 3: EP-02 Sistem Tagihan Bulanan & Status Pembayaran ----------
+
+let tPenghuni1Id = 0;
+let tPenghuni2Id = 0;
+let tagihan1Id = 0;
+
+test('Sprint 3: Setup kamar dan penghuni untuk pengujian tagihan', async () => {
+  const k1 = await call('POST', '/kamar', { nomor: 'B01', tipe: 'VIP', harga: 1500000 });
+  const k2 = await call('POST', '/kamar', { nomor: 'B02', tipe: 'Standar', harga: 900000 });
+  assert.equal(k1.status, 201);
+  assert.equal(k2.status, 201);
+
+  const p1 = await call('POST', '/penghuni', {
+    nama: 'Budi Santoso',
+    no_hp: '081234567811',
+    kamar_id: k1.body.id,
+    tanggal_masuk: '2026-10-10',
+  });
+  const p2 = await call('POST', '/penghuni', {
+    nama: 'Siti Rahma',
+    no_hp: '081234567812',
+    kamar_id: k2.body.id,
+    tanggal_masuk: '2026-10-15',
+  });
+  assert.equal(p1.status, 201);
+  assert.equal(p2.status, 201);
+  tPenghuni1Id = p1.body.id;
+  tPenghuni2Id = p2.body.id;
+});
+
+test('TC-Tagihan-01 [WBS 2.1]: Generate tagihan bulanan otomatis berdasarkan harga kamar terisi', async () => {
+  const r = await call('POST', '/tagihan/generate', { bulan: '2026-10' });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.bulan, '2026-10');
+  // Tagihan bulan 2026-10 untuk penghuni aktif sudah terbuat
+  assert.ok(r.body.total_tagihan >= 2);
+
+  const list = await call('GET', '/tagihan?bulan=2026-10');
+  assert.equal(list.status, 200);
+  const t1 = list.body.find((t: { penghuni_id: number }) => t.penghuni_id === tPenghuni1Id);
+  const t2 = list.body.find((t: { penghuni_id: number }) => t.penghuni_id === tPenghuni2Id);
+
+  assert.ok(t1, 'Tagihan penghuni 1 harus ada');
+  assert.ok(t2, 'Tagihan penghuni 2 harus ada');
+  assert.equal(t1.nominal, 1500000, 'Nominal tagihan 1 sesuai harga kamar VIP (Rp 1.500.000)');
+  assert.equal(t2.nominal, 900000, 'Nominal tagihan 2 sesuai harga kamar Standar (Rp 900.000)');
+  assert.equal(t1.status, 'Belum Lunas');
+  assert.equal(t1.jatuh_tempo, '2026-10-10');
+  assert.equal(t2.jatuh_tempo, '2026-10-15');
+
+  tagihan1Id = t1.id;
+});
+
+test('TC-Tagihan-02 [WBS 2.1]: Idempotency - generate ulang tidak membuat tagihan ganda', async () => {
+  const r = await call('POST', '/tagihan/generate', { bulan: '2026-10' });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.dibuat, 0, 'Tidak boleh ada tagihan ganda yang dibuat');
+  assert.ok(r.body.dilewati >= 2, 'Tagihan yang sudah ada dilewati');
+});
+
+test('TC-Tagihan-03 [WBS 2.2]: Rekap tagihan menampilkan daftar lunas vs belum lunas & total nominal', async () => {
+  const rekap = await call('GET', '/tagihan/rekap?bulan=2026-10');
+  assert.equal(rekap.status, 200);
+  assert.equal(rekap.body.bulan, '2026-10');
+  assert.ok(rekap.body.total_tagihan >= 2);
+  assert.equal(rekap.body.total_lunas, 0);
+  assert.equal(rekap.body.nominal_lunas, 0);
+  assert.equal(rekap.body.total_belum_lunas, rekap.body.total_tagihan);
+  assert.equal(rekap.body.nominal_belum_lunas, rekap.body.total_nominal);
+  assert.equal(rekap.body.daftar_lunas.length, 0);
+  assert.equal(rekap.body.daftar_belum_lunas.length, rekap.body.total_tagihan);
+});
+
+test('TC-Tagihan-04 [WBS 2.3]: Konfirmasi pembayaran lunas mengubah status & mencatat tanggal bayar', async () => {
+  const lunasRes = await call('PATCH', `/tagihan/${tagihan1Id}/lunas`, {
+    tanggal_bayar: '2026-10-25',
+    metode_pembayaran: 'Transfer',
+    catatan: 'Transfer via BCA',
+  });
+  assert.equal(lunasRes.status, 200);
+  assert.equal(lunasRes.body.status, 'Lunas');
+  assert.equal(lunasRes.body.tanggal_bayar, '2026-10-25');
+  assert.equal(lunasRes.body.metode_pembayaran, 'Transfer');
+  assert.equal(lunasRes.body.catatan, 'Transfer via BCA');
+
+  // Rekap terupdate secara akurat
+  const rekap = await call('GET', '/tagihan/rekap?bulan=2026-10');
+  assert.equal(rekap.body.total_lunas, 1);
+  assert.equal(rekap.body.nominal_lunas, 1500000);
+  assert.ok(rekap.body.nominal_belum_lunas > 0);
+  assert.equal(rekap.body.daftar_lunas.length, 1);
+  assert.equal(rekap.body.daftar_lunas[0].id, tagihan1Id);
+});
+
+test('TC-Tagihan-05: Filter tagihan status Lunas dan Belum Lunas', async () => {
+  const lunasList = await call('GET', '/tagihan?bulan=2026-10&status=Lunas');
+  assert.equal(lunasList.status, 200);
+  assert.ok(lunasList.body.every((t: { status: string }) => t.status === 'Lunas'));
+
+  const belumList = await call('GET', '/tagihan?bulan=2026-10&status=Belum Lunas');
+  assert.equal(belumList.status, 200);
+  assert.ok(belumList.body.every((t: { status: string }) => t.status === 'Belum Lunas'));
+});
+
+test('TC-Tagihan-06: Batal status lunas (opsi pembatalan/undo)', async () => {
+  const batalRes = await call('PATCH', `/tagihan/${tagihan1Id}/batal`);
+  assert.equal(batalRes.status, 200);
+  assert.equal(batalRes.body.status, 'Belum Lunas');
+  assert.equal(batalRes.body.tanggal_bayar, null);
+
+  const rekap = await call('GET', '/tagihan/rekap?bulan=2026-10');
+  assert.equal(rekap.body.total_lunas, 0);
+});

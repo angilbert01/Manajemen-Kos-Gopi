@@ -52,6 +52,64 @@ export interface Ringkasan {
   total_penghuni: number;
   pendapatan_bulanan: number;
   potensi_pendapatan: number;
+  tagihan_bulan?: string;
+  tagihan_total?: number;
+  tagihan_total_nominal?: number;
+  tagihan_lunas?: number;
+  tagihan_nominal_lunas?: number;
+  tagihan_belum_lunas?: number;
+  tagihan_nominal_belum_lunas?: number;
+}
+
+export type StatusTagihan = 'Belum Lunas' | 'Lunas';
+
+export interface Tagihan {
+  id: number;
+  penghuni_id: number;
+  kamar_id: number;
+  bulan: string; // YYYY-MM
+  nominal: number;
+  status: StatusTagihan;
+  jatuh_tempo: string; // YYYY-MM-DD
+  tanggal_bayar: string | null;
+  metode_pembayaran: string | null;
+  catatan: string | null;
+  created_at: string;
+  updated_at: string;
+  penghuni_nama: string;
+  penghuni_no_hp: string;
+  penghuni_masuk: string;
+  kamar_nomor: string;
+  kamar_tipe: string;
+  kamar_harga: number;
+}
+
+export interface RekapTagihan {
+  bulan: string;
+  total_tagihan: number;
+  total_nominal: number;
+  total_lunas: number;
+  nominal_lunas: number;
+  total_belum_lunas: number;
+  nominal_belum_lunas: number;
+  daftar_lunas: Tagihan[];
+  daftar_belum_lunas: Tagihan[];
+  bulan_tersedia: string[];
+}
+
+export interface GenerateTagihanResult {
+  bulan: string;
+  total_penghuni_aktif: number;
+  dibuat: number;
+  dilewati: number;
+  total_tagihan: number;
+  tagihan: Tagihan[];
+}
+
+export interface LunasPayload {
+  tanggal_bayar?: string;
+  metode_pembayaran?: string;
+  catatan?: string;
 }
 
 export type KamarForm = { nomor: string; tipe: string; harga: string; foto_url: string };
@@ -122,6 +180,14 @@ export const api = {
     create: (f: PenghuniForm) => request<Penghuni>('POST', '/penghuni', { ...f, kamar_id: Number(f.kamar_id) }),
     keluar: (id: number) => request<Penghuni>('PATCH', `/penghuni/${id}/keluar`, {}),
   },
+  tagihan: {
+    list: (f: { bulan?: string; status?: string; q?: string } = {}) => request<Tagihan[]>('GET', `/tagihan${qs(f)}`),
+    rekap: (bulan?: string) => request<RekapTagihan>('GET', `/tagihan/rekap${bulan ? `?bulan=${bulan}` : ''}`),
+    generate: (bulan?: string) => request<GenerateTagihanResult>('POST', '/tagihan/generate', { bulan }),
+    lunas: (id: number, payload: LunasPayload = {}) => request<Tagihan>('PATCH', `/tagihan/${id}/lunas`, payload),
+    batal: (id: number) => request<Tagihan>('PATCH', `/tagihan/${id}/batal`, {}),
+    remove: (id: number) => request<void>('DELETE', `/tagihan/${id}`),
+  },
 };
 
 export const rupiah = (amount: number) => `Rp ${amount.toLocaleString('id-ID')}`;
@@ -130,4 +196,10 @@ export const tanggal = (iso: string) =>
 export const today = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+export const namaBulan = (bulanIso: string) => {
+  if (!bulanIso) return '';
+  const [y, m] = bulanIso.split('-');
+  const date = new Date(Number(y), Number(m) - 1, 1);
+  return date.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
 };

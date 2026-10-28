@@ -75,3 +75,44 @@ export function validateAdmin(body: Record<string, unknown>): { data?: AdminInpu
   if (Object.keys(errors).length) return { errors };
   return { data: { nama, peran, email, no_hp, nama_kos, alamat_kos, avatar_url } };
 }
+
+export interface GenerateTagihanInput {
+  bulan: string; // YYYY-MM
+}
+
+export interface LunasInput {
+  tanggal_bayar: string;
+  metode_pembayaran: string;
+  catatan?: string;
+}
+
+const BULAN_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+export function validateGenerateTagihan(body: Record<string, unknown>): { data?: GenerateTagihanInput; errors?: Errors } {
+  const errors: Errors = {};
+  let bulan = str(body.bulan);
+  if (!bulan) {
+    const d = new Date();
+    bulan = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  } else if (!BULAN_RE.test(bulan)) {
+    errors.bulan = 'Format bulan harus YYYY-MM (contoh: 2026-10).';
+  }
+  if (Object.keys(errors).length) return { errors };
+  return { data: { bulan } };
+}
+
+export function validateLunas(body: Record<string, unknown>): { data?: LunasInput; errors?: Errors } {
+  const errors: Errors = {};
+  let tanggal_bayar = str(body.tanggal_bayar);
+  if (!tanggal_bayar) {
+    const d = new Date();
+    tanggal_bayar = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  } else if (!isIsoDate(tanggal_bayar)) {
+    errors.tanggal_bayar = 'Format tanggal bayar harus YYYY-MM-DD.';
+  }
+  const metode = str(body.metode_pembayaran) || 'Tunai';
+  const catatan = str(body.catatan);
+
+  if (Object.keys(errors).length) return { errors };
+  return { data: { tanggal_bayar, metode_pembayaran: metode, catatan: catatan || undefined } };
+}

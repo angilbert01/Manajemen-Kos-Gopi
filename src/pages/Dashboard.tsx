@@ -1,8 +1,30 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-import { MdAdd, MdBusiness, MdHotel, MdPersonAdd, MdViewModule } from 'react-icons/md';
-import { api, ApiError, rupiah, tanggal, today } from '../api';
-import type { Kamar, KamarForm, Penghuni, PenghuniForm, Ringkasan } from '../api';
+import {
+  MdAdd,
+  MdBusiness,
+  MdChat,
+  MdCheckCircle,
+  MdHotel,
+  MdPersonAdd,
+  MdReceipt,
+  MdRefresh,
+  MdUndo,
+  MdViewModule,
+  MdWarning,
+} from 'react-icons/md';
+import { api, ApiError, namaBulan, rupiah, tanggal, today } from '../api';
+import type {
+  AdminProfile,
+  Kamar,
+  KamarForm,
+  LunasPayload,
+  Penghuni,
+  PenghuniForm,
+  RekapTagihan,
+  Ringkasan,
+  Tagihan,
+} from '../api';
 import { Field, IconWidget, Modal, Stat, StatusPill } from '../components';
 
 const PHONE_RE = /^(\+62|62|0)8\d{7,12}$/;
@@ -15,13 +37,31 @@ const blankPenghuni = (kamarId?: number): PenghuniForm => ({
 });
 const emptyKamar: KamarForm = { nomor: '', tipe: 'Standar', harga: '', foto_url: '' };
 
+const METODE_LIST = [
+  'Tunai',
+  'Transfer BCA',
+  'Transfer Mandiri',
+  'Transfer BRI',
+  'Transfer BNI',
+  'QRIS',
+  'Lainnya',
+];
+
 type Props = { go: (page: string, action?: 'tambah', kamarId?: number) => void; notify: (m: string) => void };
 
 export default function Dashboard({ go, notify }: Props) {
   const [r, setR] = useState<Ringkasan | null>(null);
   const [kamarList, setKamarList] = useState<Kamar[]>([]);
   const [penghuniList, setPenghuniList] = useState<Penghuni[]>([]);
+  const [admin, setAdmin] = useState<AdminProfile | null>(null);
   const [apiError, setApiError] = useState('');
+
+  // Sprint 3: Rekap Tagihan Bulanan (WBS 2.2 & 2.3)
+  const [rekapTagihan, setRekapTagihan] = useState<RekapTagihan | null>(null);
+  const [selectedTagihanBulan, setSelectedTagihanBulan] = useState(() => today().slice(0, 7));
+  const [tagihanTab, setTagihanTab] = useState<'belum' | 'lunas' | 'semua'>('belum');
+  const [generatingTagihan, setGeneratingTagihan] = useState(false);
+  const [confirmLunasModal, setConfirmLunasModal] = useState<Tagihan | null>(null);
 
   // Filter katalog kamar (WBS 1.2)
   const [filterStatus, setFilterStatus] = useState<'' | 'Kosong' | 'Terisi'>('');
@@ -41,19 +81,23 @@ export default function Dashboard({ go, notify }: Props) {
 
   const loadAll = useCallback(async () => {
     try {
-      const [ringkasan, kamars, penghunis] = await Promise.all([
+      const [ringkasan, kamars, penghunis, rekap, adminData] = await Promise.all([
         api.ringkasan(),
         api.kamar.list(),
         api.penghuni.list(false),
+        api.tagihan.rekap(selectedTagihanBulan).catch(() => null),
+        api.admin.aktif().catch(() => null),
       ]);
       setR(ringkasan);
       setKamarList(kamars);
       setPenghuniList(penghunis);
+      if (rekap) setRekapTagihan(rekap);
+      if (adminData) setAdmin(adminData);
       setApiError('');
     } catch (e) {
       setApiError((e as Error).message);
     }
-  }, []);
+  }, [selectedTagihanBulan]);
 
   useEffect(() => {
     loadAll();
@@ -134,6 +178,58 @@ export default function Dashboard({ go, notify }: Props) {
     `${p.nama} ${p.kamar_nomor} ${p.no_hp}`.toLowerCase().includes(searchPenghuni.toLowerCase()),
   );
 
+  // WBS 2.1: Generate tagihan bulanan
+  const handleGenerateTagihan = async () => {
+    setGeneratingTagihan(true);
+    try {
+      const res = await api.tagihan.generate(selectedTagihanBulan);
+      if (res.dibuat > 0) {
+        notify(`Berhasil membuat ${res.dibuat} tagihan untuk ${namaBulan(selectedTagihanBulan)}.`);
+      } else {
+        notify(`Semua penghuni aktif (${res.total_penghuni_aktif}) sudah memiliki tagihan.`);
+      }
+      await loadAll();
+    } catch (e) {
+      notify((e as Error).message);
+    } finally {
+      setGeneratingTagihan(false);
+    }
+  };
+
+  // WBS 2.3: Batal status lunas
+  const handleBatalLunas = async (t: Tagihan) => {
+    if (!window.confirm(`Batalkan status lunas untuk ${t.penghuni_nama} (${t.kamar_nomor})?`)) return;
+    try {
+      await api.tagihan.batal(t.id);
+      notify(`Status tagihan ${t.penghuni_nama} dikembalikan menjadi "Belum Lunas".`);
+      await loadAll();
+    } catch (e) {
+      notify((e as Error).message);
+    }
+  };
+
+  const kirimPengingatWa = (t: Tagihan) => {
+    let cleanPhone = t.penghuni_no_hp.replace(/\D/g, '');
+    if (cleanPhone.startsWith('0')) cleanPhone = `62${cleanPhone.slice(1)}`;
+    const kosName = admin?.nama_kos || 'Kos Gopi';
+    const text = encodeURIComponent(
+      `Halo Kak ${t.penghuni_nama}, kami dari manajemen ${kosName} menginformasikan tagihan sewa kamar ${t.kamar_nomor} (${t.kamar_tipe}) untuk periode ${namaBulan(t.bulan)} sebesar ${rupiah(t.nominal)} jatuh tempo pada ${tanggal(t.jatuh_tempo)}. Terima kasih! 🙏`,
+    );
+    window.open(`https://api.whatsapp.com/send?phone=${cleanPhone}&text=${text}`, '_blank');
+  };
+
+  const daftarTagihanTampil =
+    tagihanTab === 'belum'
+      ? rekapTagihan?.daftar_belum_lunas ?? []
+      : tagihanTab === 'lunas'
+      ? rekapTagihan?.daftar_lunas ?? []
+      : [...(rekapTagihan?.daftar_belum_lunas ?? []), ...(rekapTagihan?.daftar_lunas ?? [])];
+
+  const totalTagihanNominal = rekapTagihan?.total_nominal ?? 0;
+  const lunasNominal = rekapTagihan?.nominal_lunas ?? 0;
+  const belumNominal = rekapTagihan?.nominal_belum_lunas ?? 0;
+  const pctTagihanLunas = totalTagihanNominal > 0 ? Math.round((lunasNominal / totalTagihanNominal) * 100) : 0;
+
   return (
     <div className="DashboardPage">
       {apiError && <div className="alert alert-danger mb-3">{apiError}</div>}
@@ -172,6 +268,231 @@ export default function Dashboard({ go, notify }: Props) {
           progress={revPct}
           progressLabel="Realisasi sewa"
         />
+      </div>
+
+      {/* Row: Sprint 3 Deliverable (WBS 2.2 & 2.3) — Dashboard Rekap Tagihan Bulanan (Optimal untuk Layar HP) */}
+      <div className="card mb-3 dashboard-rekap-box">
+        <div className="card-header d-flex flex-wrap justify-content-between align-items-center" style={{ gap: '0.6rem' }}>
+          <div>
+            <strong className="d-flex align-items-center">
+              <MdReceipt className="text-primary mr-1" size={20} />
+              Dashboard Rekap Tagihan Bulanan — {namaBulan(selectedTagihanBulan)}
+            </strong>
+            <small className="text-muted">
+              WBS 2.2 · Tampilan rekap sederhana & mudah dicek lewat HP (Lunas vs Belum Lunas)
+            </small>
+          </div>
+          <div className="d-flex flex-wrap align-items-center" style={{ gap: '0.4rem' }}>
+            <select
+              aria-label="Pilih bulan rekap"
+              className="form-control form-control-sm"
+              value={selectedTagihanBulan}
+              onChange={(e) => setSelectedTagihanBulan(e.target.value)}
+              style={{ width: 'auto', minWidth: '150px' }}
+            >
+              {rekapTagihan?.bulan_tersedia.map((b) => (
+                <option key={b} value={b}>
+                  {namaBulan(b)} {b === today().slice(0, 7) ? '(Bulan Ini)' : ''}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="btn btn-sm btn-primary d-inline-flex align-items-center"
+              onClick={handleGenerateTagihan}
+              disabled={generatingTagihan}
+              title="Generate otomatis tagihan bulan ini untuk semua kamar terisi"
+            >
+              <MdRefresh size={15} className={`mr-1 ${generatingTagihan ? 'spinner' : ''}`} />
+              {generatingTagihan ? 'Membuat...' : 'Generate Tagihan'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary"
+              onClick={() => go('Tagihan')}
+            >
+              Halaman Penuh Tagihan →
+            </button>
+          </div>
+        </div>
+
+        <div className="card-body">
+          {/* 3 Metric Cards Rekap (WBS 2.2) */}
+          <div className="row mb-3">
+            <div className="col-md-4 col-sm-6 mb-2">
+              <div className="p-3 rounded bg-light border">
+                <div className="text-muted small">Total Tagihan Periode Ini</div>
+                <h4 className="mb-0 font-weight-bold text-dark">{rupiah(totalTagihanNominal)}</h4>
+                <div className="text-muted small">{rekapTagihan?.total_tagihan ?? 0} tagihan terbit</div>
+              </div>
+            </div>
+
+            <div className="col-md-4 col-sm-6 mb-2">
+              <div className="p-3 rounded border" style={{ backgroundColor: '#eafaf1', borderColor: '#c3e6cb' }}>
+                <div className="text-success font-weight-500 small">✓ Sudah Terbayar (Lunas)</div>
+                <h4 className="mb-0 font-weight-bold text-success">{rupiah(lunasNominal)}</h4>
+                <div className="d-flex justify-content-between align-items-center small text-muted mt-1">
+                  <span>{rekapTagihan?.total_lunas ?? 0} penghuni lunas</span>
+                  <span className="font-weight-500 text-success">{pctTagihanLunas}%</span>
+                </div>
+                <div className="progress mt-1" style={{ height: '5px' }}>
+                  <div className="progress-bar bg-success" style={{ width: `${pctTagihanLunas}%` }} />
+                </div>
+              </div>
+            </div>
+
+            <div className="col-md-4 col-sm-12 mb-2">
+              <div className="p-3 rounded border" style={{ backgroundColor: '#fff9e6', borderColor: '#ffeeba' }}>
+                <div className="small font-weight-500" style={{ color: '#856404' }}>
+                  ⚠️ Tertunggak (Belum Lunas)
+                </div>
+                <h4 className="mb-0 font-weight-bold" style={{ color: '#856404' }}>
+                  {rupiah(belumNominal)}
+                </h4>
+                <div className="d-flex justify-content-between align-items-center small text-muted mt-1">
+                  <span>{rekapTagihan?.total_belum_lunas ?? 0} perlu ditagih</span>
+                  <span className="font-weight-500" style={{ color: '#856404' }}>
+                    {100 - pctTagihanLunas}%
+                  </span>
+                </div>
+                <div className="progress mt-1" style={{ height: '5px' }}>
+                  <div className="progress-bar bg-warning" style={{ width: `${100 - pctTagihanLunas}%` }} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Segmented Tab Filter untuk HP (WBS 2.2) */}
+          <div className="d-flex flex-wrap justify-content-between align-items-center mb-3" style={{ gap: '0.5rem' }}>
+            <div className="btn-group btn-group-sm" role="group" aria-label="Tab daftar tagihan">
+              <button
+                type="button"
+                className={`btn ${tagihanTab === 'belum' ? 'btn-warning text-dark font-weight-bold' : 'btn-outline-secondary'}`}
+                onClick={() => setTagihanTab('belum')}
+              >
+                ⚠️ Belum Lunas ({rekapTagihan?.total_belum_lunas ?? 0})
+              </button>
+              <button
+                type="button"
+                className={`btn ${tagihanTab === 'lunas' ? 'btn-success font-weight-bold' : 'btn-outline-secondary'}`}
+                onClick={() => setTagihanTab('lunas')}
+              >
+                ✓ Sudah Lunas ({rekapTagihan?.total_lunas ?? 0})
+              </button>
+              <button
+                type="button"
+                className={`btn ${tagihanTab === 'semua' ? 'btn-primary font-weight-bold' : 'btn-outline-secondary'}`}
+                onClick={() => setTagihanTab('semua')}
+              >
+                Semua ({rekapTagihan?.total_tagihan ?? 0})
+              </button>
+            </div>
+
+            <small className="text-muted">
+              Menampilkan {daftarTagihanTampil.length} data tagihan
+            </small>
+          </div>
+
+          {/* List Kartu Tagihan Sederhana (Responsive untuk Layar HP) */}
+          {daftarTagihanTampil.length === 0 ? (
+            <div className="p-4 text-center text-muted bg-light rounded border">
+              {tagihanTab === 'belum' ? (
+                <>
+                  <MdCheckCircle size={36} className="text-success mb-2" />
+                  <p className="mb-0">Hebat! Semua penghuni sudah melunasi tagihan periode ini.</p>
+                </>
+              ) : (
+                <p className="mb-0">Tidak ada data tagihan pada tab ini.</p>
+              )}
+            </div>
+          ) : (
+            <div className="list-group list-group-flush border rounded">
+              {daftarTagihanTampil.map((t) => {
+                const isLunas = t.status === 'Lunas';
+                const isLewat = !isLunas && t.jatuh_tempo < today();
+                return (
+                  <div
+                    key={t.id}
+                    className="list-group-item p-3 d-flex flex-wrap justify-content-between align-items-center"
+                    style={{
+                      backgroundColor: isLunas ? '#fff' : '#fffdfa',
+                      gap: '0.8rem',
+                      borderLeft: `4px solid ${isLunas ? 'var(--success)' : isLewat ? 'var(--danger)' : 'var(--warning)'}`,
+                    }}
+                  >
+                    <div>
+                      <div className="d-flex align-items-center flex-wrap" style={{ gap: '0.4rem' }}>
+                        <strong className="text-dark h6 mb-0">{t.kamar_nomor}</strong>
+                        <span className="badge badge-light border">{t.kamar_tipe}</span>
+                        {isLunas ? (
+                          <span className="badge badge-success d-inline-flex align-items-center">
+                            <MdCheckCircle size={12} className="mr-1" /> Lunas
+                          </span>
+                        ) : isLewat ? (
+                          <span className="badge badge-danger d-inline-flex align-items-center">
+                            <MdWarning size={12} className="mr-1" /> Lewat Jatuh Tempo
+                          </span>
+                        ) : (
+                          <span className="badge badge-warning text-dark d-inline-flex align-items-center">
+                            <MdWarning size={12} className="mr-1" /> Belum Lunas
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="font-weight-500 mt-1">{t.penghuni_nama}</div>
+                      <div className="small text-muted">
+                        Jatuh Tempo: <strong>{tanggal(t.jatuh_tempo)}</strong>
+                        {isLunas && t.tanggal_bayar && (
+                          <span className="ml-2 text-success">
+                            · Dibayar: {tanggal(t.tanggal_bayar)} ({t.metode_pembayaran || 'Tunai'})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="d-flex flex-wrap align-items-center" style={{ gap: '0.6rem' }}>
+                      <div className="text-right mr-2">
+                        <div className="h5 mb-0 font-weight-bold text-dark">{rupiah(t.nominal)}</div>
+                        <small className="text-muted">{namaBulan(t.bulan)}</small>
+                      </div>
+
+                      {!isLunas ? (
+                        <div className="d-inline-flex align-items-center" style={{ gap: '0.35rem' }}>
+                          {/* WBS 2.3 Subtask 11: Tombol konfirmasi pembayaran lunas di dashboard */}
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-success d-inline-flex align-items-center"
+                            onClick={() => setConfirmLunasModal(t)}
+                            title="Konfirmasi pembayaran lunas"
+                          >
+                            <MdCheckCircle size={15} className="mr-1" /> Tandai Lunas
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-success"
+                            onClick={() => kirimPengingatWa(t)}
+                            title="Kirim pengingat via WhatsApp"
+                          >
+                            <MdChat size={15} /> WA
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center"
+                          onClick={() => handleBatalLunas(t)}
+                          title="Batalkan status lunas"
+                        >
+                          <MdUndo size={14} className="mr-1" /> Batal
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Row 2: Sprint 2 Deliverables — Katalog Kamar (WBS 1.2) + Form Registrasi Penghuni (WBS 1.3) */}
@@ -507,7 +828,122 @@ export default function Dashboard({ go, notify }: Props) {
           }}
         />
       )}
+
+      {confirmLunasModal && (
+        <DashboardModalKonfirmasiLunas
+          tagihan={confirmLunasModal}
+          onClose={() => setConfirmLunasModal(null)}
+          onSuccess={async (updated) => {
+            setConfirmLunasModal(null);
+            notify(`Tagihan ${updated.penghuni_nama} (${updated.kamar_nomor}) berhasil ditandai Lunas.`);
+            await loadAll();
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+function DashboardModalKonfirmasiLunas({
+  tagihan,
+  onClose,
+  onSuccess,
+}: {
+  tagihan: Tagihan;
+  onClose: () => void;
+  onSuccess: (t: Tagihan) => void;
+}) {
+  const [tglBayar, setTglBayar] = useState(today());
+  const [metode, setMetode] = useState('Transfer BCA');
+  const [catatan, setCatatan] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const payload: LunasPayload = {
+        tanggal_bayar: tglBayar,
+        metode_pembayaran: metode,
+        catatan: catatan.trim() || undefined,
+      };
+      const updated = await api.tagihan.lunas(tagihan.id, payload);
+      onSuccess(updated);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title="Konfirmasi Pembayaran Lunas" onClose={onClose}>
+      <form onSubmit={submit} className="form">
+        {error && <div className="alert alert-danger">{error}</div>}
+
+        <div className="card p-3 mb-3 bg-light" style={{ border: '1px solid #e2e8f0' }}>
+          <div className="d-flex justify-content-between mb-1">
+            <span className="text-muted small">Penghuni:</span>
+            <strong>{tagihan.penghuni_nama}</strong>
+          </div>
+          <div className="d-flex justify-content-between mb-1">
+            <span className="text-muted small">Kamar:</span>
+            <span>
+              <strong>{tagihan.kamar_nomor}</strong> ({tagihan.kamar_tipe})
+            </span>
+          </div>
+          <div className="d-flex justify-content-between mb-1">
+            <span className="text-muted small">Periode:</span>
+            <span>{namaBulan(tagihan.bulan)}</span>
+          </div>
+          <div className="d-flex justify-content-between pt-2 mt-2" style={{ borderTop: '1px dashed #cbd5e0' }}>
+            <span className="font-weight-500">Nominal:</span>
+            <strong className="text-success h5 mb-0">{rupiah(tagihan.nominal)}</strong>
+          </div>
+        </div>
+
+        <Field label="Tanggal Bayar *">
+          <input
+            type="date"
+            className="form-control"
+            value={tglBayar}
+            onChange={(e) => setTglBayar(e.target.value)}
+            required
+          />
+        </Field>
+
+        <Field label="Metode Pembayaran *">
+          <select className="form-control" value={metode} onChange={(e) => setMetode(e.target.value)}>
+            {METODE_LIST.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <Field label="Catatan (opsional)">
+          <input
+            type="text"
+            className="form-control"
+            placeholder="mis. Bukti transfer di WA / No. ref bank"
+            value={catatan}
+            onChange={(e) => setCatatan(e.target.value)}
+          />
+        </Field>
+
+        <div className="formactions">
+          <button type="button" className="btn btn-outline-secondary" onClick={onClose} disabled={saving}>
+            Batal
+          </button>
+          <button type="submit" className="btn btn-success d-inline-flex align-items-center" disabled={saving}>
+            <MdCheckCircle size={16} className="mr-1" />
+            {saving ? 'Menyimpan...' : 'Tandai Sebagai Lunas'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
