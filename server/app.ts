@@ -6,6 +6,7 @@ import {
   validateGenerateTagihan,
   validateKamar,
   validateLunas,
+  validatePembayaran,
   validatePenghuni,
 } from './validation.ts';
 
@@ -22,15 +23,47 @@ const PENGHUNI_SELECT = `
          p.tanggal_masuk, p.tanggal_keluar, p.aktif, p.created_at
   FROM penghuni p JOIN kamar k ON k.id = p.kamar_id`;
 
+// Agregat pembayaran per tagihan (mendukung cicilan): total terbayar & jumlah transaksi.
+const PEMBAYARAN_AGG = `
+  LEFT JOIN (
+    SELECT tagihan_id, SUM(jumlah) AS terbayar, COUNT(*) AS jumlah_pembayaran
+    FROM pembayaran GROUP BY tagihan_id
+  ) pb ON pb.tagihan_id = t.id`;
+
 const TAGIHAN_SELECT = `
   SELECT t.id, t.penghuni_id, t.kamar_id, t.bulan, t.nominal, t.status,
          t.jatuh_tempo, t.tanggal_bayar, t.metode_pembayaran, t.catatan,
          t.created_at, t.updated_at,
+         COALESCE(pb.terbayar, 0) AS terbayar,
+         MAX(t.nominal - COALESCE(pb.terbayar, 0), 0) AS sisa,
+         COALESCE(pb.jumlah_pembayaran, 0) AS jumlah_pembayaran,
+         CASE WHEN t.status = 'Lunas' THEN 'Lunas'
+              WHEN COALESCE(pb.terbayar, 0) > 0 THEN 'Dicicil'
+              ELSE 'Belum Bayar' END AS status_bayar,
          p.nama AS penghuni_nama, p.no_hp AS penghuni_no_hp, p.tanggal_masuk AS penghuni_masuk,
          k.nomor AS kamar_nomor, k.tipe AS kamar_tipe, k.harga AS kamar_harga
   FROM tagihan t
   JOIN penghuni p ON p.id = t.penghuni_id
-  JOIN kamar k ON k.id = t.kamar_id`;
+  JOIN kamar k ON k.id = t.kamar_id
+  ${PEMBAYARAN_AGG}`;
+
+/**
+ * Rekap nominal per bulan. nominal_lunas = uang yang SUDAH masuk (termasuk cicilan),
+ * nominal_belum_lunas = sisa yang masih harus ditagih.
+ */
+const REKAP_SELECT = `
+  SELECT
+    COUNT(*) AS total_tagihan,
+    COALESCE(SUM(t.nominal), 0) AS total_nominal,
+    COALESCE(SUM(CASE WHEN t.status = 'Lunas' THEN 1 ELSE 0 END), 0) AS total_lunas,
+    COALESCE(SUM(COALESCE(pb.terbayar, 0)), 0) AS nominal_lunas,
+    COALESCE(SUM(CASE WHEN t.status = 'Belum Lunas' THEN 1 ELSE 0 END), 0) AS total_belum_lunas,
+    COALESCE(SUM(MAX(t.nominal - COALESCE(pb.terbayar, 0), 0)), 0) AS nominal_belum_lunas,
+    COALESCE(SUM(CASE WHEN t.status = 'Belum Lunas' AND COALESCE(pb.terbayar, 0) > 0 THEN 1 ELSE 0 END), 0) AS total_dicicil,
+    COALESCE(SUM(CASE WHEN t.status = 'Belum Lunas' THEN COALESCE(pb.terbayar, 0) ELSE 0 END), 0) AS nominal_dicicil
+  FROM tagihan t
+  ${PEMBAYARAN_AGG}
+  WHERE t.bulan = ?`;
 
 const ADMIN_COLS = 'id, nama, peran, email, no_hp, nama_kos, alamat_kos, avatar_url, aktif, created_at, updated_at';
 
@@ -38,6 +71,30 @@ const getKamar = (id: number | bigint) => db.prepare(`${KAMAR_SELECT} WHERE k.id
 const getPenghuni = (id: number | bigint) => db.prepare(`${PENGHUNI_SELECT} WHERE p.id = ?`).get(id);
 const getAdmin = (id: number | bigint) => db.prepare(`SELECT ${ADMIN_COLS} FROM admin_profile WHERE id = ?`).get(id);
 const getTagihan = (id: number | bigint) => db.prepare(`${TAGIHAN_SELECT} WHERE t.id = ?`).get(id);
+const getPembayaranList = (tagihanId: number | bigint) =>
+  db.prepare(`SELECT id, tagihan_id, jumlah, tanggal_bayar, metode_pembayaran, catatan, created_at
+              FROM pembayaran WHERE tagihan_id = ? ORDER BY tanggal_bayar ASC, id ASC`).all(tagihanId);
+
+/**
+ * Hitung ulang status tagihan dari total pembayaran:
+ * total >= nominal -> 'Lunas' (tanggal_bayar = tanggal pembayaran terakhir), selain itu 'Belum Lunas'.
+ */
+function syncStatusTagihan(tagihanId: number | bigint) {
+  const t = db.prepare('SELECT nominal FROM tagihan WHERE id = ?').get(tagihanId) as { nominal: number } | undefined;
+  if (!t) return;
+  const agg = db.prepare(
+    'SELECT COALESCE(SUM(jumlah), 0) AS terbayar, MAX(tanggal_bayar) AS terakhir FROM pembayaran WHERE tagihan_id = ?',
+  ).get(tagihanId) as { terbayar: number; terakhir: string | null };
+  const last = db.prepare(
+    'SELECT metode_pembayaran FROM pembayaran WHERE tagihan_id = ? ORDER BY tanggal_bayar DESC, id DESC LIMIT 1',
+  ).get(tagihanId) as { metode_pembayaran: string } | undefined;
+  const lunas = agg.terbayar >= t.nominal;
+  db.prepare(`
+    UPDATE tagihan
+    SET status = ?, tanggal_bayar = ?, metode_pembayaran = COALESCE(?, metode_pembayaran), updated_at = datetime('now')
+    WHERE id = ?
+  `).run(lunas ? 'Lunas' : 'Belum Lunas', lunas ? agg.terakhir : null, last?.metode_pembayaran ?? null, tagihanId);
+}
 
 export function hitungJatuhTempo(tanggalMasuk: string, bulan: string): string {
   const [year, month] = bulan.split('-').map(Number);
@@ -150,17 +207,7 @@ export function createApp() {
     };
     const d = new Date();
     const currentBulan = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    const tagihanRekap = db.prepare(`
-      SELECT
-        COUNT(*) AS total_tagihan,
-        COALESCE(SUM(nominal), 0) AS total_nominal,
-        COALESCE(SUM(CASE WHEN status = 'Lunas' THEN 1 ELSE 0 END), 0) AS tagihan_lunas,
-        COALESCE(SUM(CASE WHEN status = 'Lunas' THEN nominal ELSE 0 END), 0) AS nominal_lunas,
-        COALESCE(SUM(CASE WHEN status = 'Belum Lunas' THEN 1 ELSE 0 END), 0) AS tagihan_belum_lunas,
-        COALESCE(SUM(CASE WHEN status = 'Belum Lunas' THEN nominal ELSE 0 END), 0) AS nominal_belum_lunas
-      FROM tagihan
-      WHERE bulan = ?
-    `).get(currentBulan) as Row;
+    const tagihanRekap = db.prepare(REKAP_SELECT).get(currentBulan) as Row;
 
     res.json({
       total_kamar: r.total,
@@ -172,10 +219,11 @@ export function createApp() {
       tagihan_bulan: currentBulan,
       tagihan_total: tagihanRekap.total_tagihan,
       tagihan_total_nominal: tagihanRekap.total_nominal,
-      tagihan_lunas: tagihanRekap.tagihan_lunas,
+      tagihan_lunas: tagihanRekap.total_lunas,
       tagihan_nominal_lunas: tagihanRekap.nominal_lunas,
-      tagihan_belum_lunas: tagihanRekap.tagihan_belum_lunas,
+      tagihan_belum_lunas: tagihanRekap.total_belum_lunas,
       tagihan_nominal_belum_lunas: tagihanRekap.nominal_belum_lunas,
+      tagihan_dicicil: tagihanRekap.total_dicicil,
     });
   });
 
@@ -375,6 +423,8 @@ export function createApp() {
     if (status === 'Lunas' || status === 'Belum Lunas') {
       where.push('t.status = ?');
       params.push(status);
+    } else if (status === 'Dicicil') {
+      where.push("t.status = 'Belum Lunas' AND COALESCE(pb.terbayar, 0) > 0");
     }
     if (typeof q === 'string' && q.trim()) {
       where.push('(p.nama LIKE ? OR k.nomor LIKE ? OR p.no_hp LIKE ?)');
@@ -393,17 +443,7 @@ export function createApp() {
       bulan = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     }
 
-    const totals = db.prepare(`
-      SELECT
-        COUNT(*) AS total_tagihan,
-        COALESCE(SUM(nominal), 0) AS total_nominal,
-        COALESCE(SUM(CASE WHEN status = 'Lunas' THEN 1 ELSE 0 END), 0) AS total_lunas,
-        COALESCE(SUM(CASE WHEN status = 'Lunas' THEN nominal ELSE 0 END), 0) AS nominal_lunas,
-        COALESCE(SUM(CASE WHEN status = 'Belum Lunas' THEN 1 ELSE 0 END), 0) AS total_belum_lunas,
-        COALESCE(SUM(CASE WHEN status = 'Belum Lunas' THEN nominal ELSE 0 END), 0) AS nominal_belum_lunas
-      FROM tagihan
-      WHERE bulan = ?
-    `).get(bulan) as Row;
+    const totals = db.prepare(REKAP_SELECT).get(bulan) as Row;
 
     const daftarLunas = db.prepare(`
       ${TAGIHAN_SELECT}
@@ -431,6 +471,8 @@ export function createApp() {
       nominal_lunas: totals.nominal_lunas,
       total_belum_lunas: totals.total_belum_lunas,
       nominal_belum_lunas: totals.nominal_belum_lunas,
+      total_dicicil: totals.total_dicicil,
+      nominal_dicicil: totals.nominal_dicicil,
       daftar_lunas: daftarLunas,
       daftar_belum_lunas: daftarBelumLunas,
       bulan_tersedia: bulanTersedia,
@@ -443,40 +485,83 @@ export function createApp() {
     res.json(row);
   });
 
+  // WBS 2.3 (jalan pintas): lunasi SISA tagihan dalam 1 pembayaran. Bayar langsung 1 bulan = cukup ini.
   app.patch('/api/tagihan/:id/lunas', (req, res) => {
     const id = idParam(req);
     const row = getTagihan(id) as Row | undefined;
     if (!row) throw new HttpError(404, 'Tagihan tidak ditemukan.');
+    if ((row.sisa as number) <= 0) throw new HttpError(409, 'Tagihan ini sudah lunas.');
     const { data, errors } = validateLunas(req.body ?? {});
     if (!data) throw new HttpError(422, 'Data konfirmasi pembayaran tidak valid.', errors);
 
-    db.prepare(`
-      UPDATE tagihan
-      SET status = 'Lunas',
-          tanggal_bayar = ?,
-          metode_pembayaran = ?,
-          catatan = COALESCE(?, catatan),
-          updated_at = datetime('now')
-      WHERE id = ?
-    `).run(data.tanggal_bayar, data.metode_pembayaran, data.catatan ?? null, id);
+    transaction(() => {
+      db.prepare(
+        'INSERT INTO pembayaran (tagihan_id, jumlah, tanggal_bayar, metode_pembayaran, catatan) VALUES (?, ?, ?, ?, ?)',
+      ).run(id, row.sisa as number, data.tanggal_bayar, data.metode_pembayaran, data.catatan ?? null);
+      if (data.catatan) db.prepare('UPDATE tagihan SET catatan = ? WHERE id = ?').run(data.catatan, id);
+      syncStatusTagihan(id);
+    });
 
     res.json(getTagihan(id));
   });
 
+  // Undo: hapus SEMUA pembayaran tagihan ini -> kembali 'Belum Lunas'.
   app.patch('/api/tagihan/:id/batal', (req, res) => {
     const id = idParam(req);
     const row = getTagihan(id) as Row | undefined;
     if (!row) throw new HttpError(404, 'Tagihan tidak ditemukan.');
 
-    db.prepare(`
-      UPDATE tagihan
-      SET status = 'Belum Lunas',
-          tanggal_bayar = NULL,
-          updated_at = datetime('now')
-      WHERE id = ?
-    `).run(id);
+    transaction(() => {
+      db.prepare('DELETE FROM pembayaran WHERE tagihan_id = ?').run(id);
+      syncStatusTagihan(id);
+    });
 
     res.json(getTagihan(id));
+  });
+
+  // ---------- Pembayaran / Cicilan (request klien) ----------
+  app.get('/api/tagihan/:id/pembayaran', (req, res) => {
+    const id = idParam(req);
+    if (!getTagihan(id)) throw new HttpError(404, 'Tagihan tidak ditemukan.');
+    res.json(getPembayaranList(id));
+  });
+
+  // Catat 1 pembayaran (cicilan atau penuh). Status otomatis 'Lunas' bila total >= nominal.
+  app.post('/api/tagihan/:id/pembayaran', (req, res) => {
+    const id = idParam(req);
+    const row = getTagihan(id) as Row | undefined;
+    if (!row) throw new HttpError(404, 'Tagihan tidak ditemukan.');
+    const sisa = row.sisa as number;
+    if (sisa <= 0) throw new HttpError(409, 'Tagihan ini sudah lunas.');
+    const { data, errors } = validatePembayaran(req.body ?? {});
+    if (!data) throw new HttpError(422, 'Data pembayaran tidak valid.', errors);
+    if (data.jumlah > sisa) {
+      const msg = `Jumlah bayar melebihi sisa tagihan (sisa Rp ${sisa.toLocaleString('id-ID')}).`;
+      throw new HttpError(422, msg, { jumlah: msg });
+    }
+
+    transaction(() => {
+      db.prepare(
+        'INSERT INTO pembayaran (tagihan_id, jumlah, tanggal_bayar, metode_pembayaran, catatan) VALUES (?, ?, ?, ?, ?)',
+      ).run(id, data.jumlah, data.tanggal_bayar, data.metode_pembayaran, data.catatan ?? null);
+      syncStatusTagihan(id);
+    });
+
+    res.status(201).json(getTagihan(id));
+  });
+
+  // Undo 1 pembayaran (mis. salah input nominal cicilan).
+  app.delete('/api/pembayaran/:id', (req, res) => {
+    const id = idParam(req);
+    const pb = db.prepare('SELECT tagihan_id FROM pembayaran WHERE id = ?').get(id) as { tagihan_id: number } | undefined;
+    if (!pb) throw new HttpError(404, 'Pembayaran tidak ditemukan.');
+
+    transaction(() => {
+      db.prepare('DELETE FROM pembayaran WHERE id = ?').run(id);
+      syncStatusTagihan(pb.tagihan_id);
+    });
+
+    res.json(getTagihan(pb.tagihan_id));
   });
 
   app.delete('/api/tagihan/:id', (req, res) => {

@@ -241,3 +241,83 @@ test('TC-Tagihan-06: Batal status lunas (opsi pembatalan/undo)', async () => {
   const rekap = await call('GET', '/tagihan/rekap?bulan=2026-10');
   assert.equal(rekap.body.total_lunas, 0);
 });
+
+// ---------- Request klien: Pembayaran Cicilan vs Bayar Langsung 1 Bulan ----------
+
+test('TC-Cicilan-01: Cicilan pertama -> status Dicicil, sisa berkurang, rekap akurat', async () => {
+  // Tagihan 1 = Rp 1.500.000 (sudah di-reset oleh TC-Tagihan-06)
+  const r = await call('POST', `/tagihan/${tagihan1Id}/pembayaran`, {
+    jumlah: 500000,
+    tanggal_bayar: '2026-10-05',
+    metode_pembayaran: 'Tunai',
+    catatan: 'Cicilan ke-1',
+  });
+  assert.equal(r.status, 201);
+  assert.equal(r.body.status, 'Belum Lunas');
+  assert.equal(r.body.status_bayar, 'Dicicil');
+  assert.equal(r.body.terbayar, 500000);
+  assert.equal(r.body.sisa, 1000000);
+  assert.equal(r.body.tanggal_bayar, null);
+
+  const rekap = await call('GET', '/tagihan/rekap?bulan=2026-10');
+  assert.equal(rekap.body.total_dicicil, 1);
+  assert.equal(rekap.body.nominal_lunas, 500000, 'Uang terkumpul termasuk cicilan');
+  assert.equal(rekap.body.nominal_belum_lunas, rekap.body.total_nominal - 500000, 'Tertunggak = sisa tagihan');
+});
+
+test('TC-Cicilan-02: Bayar melebihi sisa ditolak (422)', async () => {
+  const r = await call('POST', `/tagihan/${tagihan1Id}/pembayaran`, { jumlah: 2000000, tanggal_bayar: '2026-10-06' });
+  assert.equal(r.status, 422);
+  assert.ok(r.body.errors.jumlah);
+
+  const nol = await call('POST', `/tagihan/${tagihan1Id}/pembayaran`, { jumlah: 0 });
+  assert.equal(nol.status, 422);
+});
+
+test('TC-Cicilan-03: Cicilan pelunasan -> otomatis Lunas & riwayat tercatat', async () => {
+  const r = await call('POST', `/tagihan/${tagihan1Id}/pembayaran`, {
+    jumlah: 1000000,
+    tanggal_bayar: '2026-10-20',
+    metode_pembayaran: 'Transfer BCA',
+  });
+  assert.equal(r.status, 201);
+  assert.equal(r.body.status, 'Lunas');
+  assert.equal(r.body.status_bayar, 'Lunas');
+  assert.equal(r.body.sisa, 0);
+  assert.equal(r.body.tanggal_bayar, '2026-10-20', 'Tanggal lunas = tanggal cicilan terakhir');
+  assert.equal(r.body.metode_pembayaran, 'Transfer BCA');
+
+  const riwayat = await call('GET', `/tagihan/${tagihan1Id}/pembayaran`);
+  assert.equal(riwayat.status, 200);
+  assert.equal(riwayat.body.length, 2);
+
+  // Tagihan lunas tidak bisa dibayar lagi
+  assert.equal((await call('POST', `/tagihan/${tagihan1Id}/pembayaran`, { jumlah: 1000 })).status, 409);
+});
+
+test('TC-Cicilan-04: Hapus 1 cicilan (undo) -> status kembali Dicicil', async () => {
+  const riwayat = await call('GET', `/tagihan/${tagihan1Id}/pembayaran`);
+  const terakhir = riwayat.body[riwayat.body.length - 1];
+  const r = await call('DELETE', `/pembayaran/${terakhir.id}`);
+  assert.equal(r.status, 200);
+  assert.equal(r.body.status, 'Belum Lunas');
+  assert.equal(r.body.status_bayar, 'Dicicil');
+  assert.equal(r.body.sisa, 1000000);
+});
+
+test('TC-Cicilan-05: Bayar langsung 1 bulan (PATCH /lunas) = 1 pembayaran sebesar nominal', async () => {
+  const list = await call('GET', '/tagihan?bulan=2026-10&status=Belum Lunas');
+  const t2 = list.body.find((t: { penghuni_id: number }) => t.penghuni_id === tPenghuni2Id);
+  const r = await call('PATCH', `/tagihan/${t2.id}/lunas`, { tanggal_bayar: '2026-10-15', metode_pembayaran: 'QRIS' });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.status, 'Lunas');
+  assert.equal(r.body.terbayar, 900000);
+  assert.equal(r.body.jumlah_pembayaran, 1);
+
+  // PATCH /lunas pada tagihan yang dicicil hanya melunasi SISA-nya
+  const r1 = await call('PATCH', `/tagihan/${tagihan1Id}/lunas`, { tanggal_bayar: '2026-10-21' });
+  assert.equal(r1.status, 200);
+  assert.equal(r1.body.status, 'Lunas');
+  assert.equal(r1.body.terbayar, 1500000);
+  assert.equal(r1.body.jumlah_pembayaran, 2);
+});

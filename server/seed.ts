@@ -79,8 +79,29 @@ if (nTagihan === 0) {
         isLunas ? 'Lunas awal bulan' : null,
       );
     }
+
+    // Riwayat pembayaran: tagihan Lunas = 1x bayar penuh
+    db.prepare(`
+      INSERT INTO pembayaran (tagihan_id, jumlah, tanggal_bayar, metode_pembayaran, catatan)
+      SELECT id, nominal, tanggal_bayar, COALESCE(metode_pembayaran, 'Tunai'), catatan
+      FROM tagihan WHERE status = 'Lunas'
+    `).run();
+
+    // Contoh cicilan: penghuni ke-4 baru membayar separuh tagihan bulan ini
+    const cicil = activePenghuni[3];
+    if (cicil) {
+      const t = db.prepare(`SELECT id, nominal FROM tagihan WHERE penghuni_id = ? AND bulan = '2026-10'`).get(cicil.id) as
+        | { id: number; nominal: number }
+        | undefined;
+      if (t) {
+        db.prepare(`
+          INSERT INTO pembayaran (tagihan_id, jumlah, tanggal_bayar, metode_pembayaran, catatan)
+          VALUES (?, ?, ?, 'Tunai', 'Cicilan ke-1')
+        `).run(t.id, Math.round(t.nominal / 2), `2026-10-${cicil.tanggal_masuk.slice(8, 10)}`);
+      }
+    }
   });
-  console.log(`[seed] Tagihan contoh bulan September dan Oktober 2026 berhasil ditambahkan.`);
+  console.log(`[seed] Tagihan contoh bulan September dan Oktober 2026 (termasuk 1 contoh cicilan) berhasil ditambahkan.`);
 } else {
   console.log(`[seed] Tagihan sudah ada (${nTagihan} tagihan).`);
 }

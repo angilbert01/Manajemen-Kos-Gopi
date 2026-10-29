@@ -116,3 +116,20 @@ export function validateLunas(body: Record<string, unknown>): { data?: LunasInpu
   if (Object.keys(errors).length) return { errors };
   return { data: { tanggal_bayar, metode_pembayaran: metode, catatan: catatan || undefined } };
 }
+
+export interface PembayaranInput extends LunasInput {
+  jumlah: number;
+}
+
+/** Validasi 1 transaksi pembayaran (cicilan atau bayar penuh). Batas sisa tagihan dicek di app.ts. */
+export function validatePembayaran(body: Record<string, unknown>): { data?: PembayaranInput; errors?: Errors } {
+  const errors: Errors = {};
+  const jumlah = Number(body.jumlah);
+  if (body.jumlah === undefined || body.jumlah === null || body.jumlah === '') errors.jumlah = 'Jumlah bayar wajib diisi.';
+  else if (!Number.isInteger(jumlah) || jumlah <= 0) errors.jumlah = 'Jumlah bayar harus bilangan bulat lebih dari 0.';
+
+  const base = validateLunas(body);
+  if (base.errors) Object.assign(errors, base.errors);
+  if (Object.keys(errors).length || !base.data) return { errors };
+  return { data: { ...base.data, jumlah } };
+}

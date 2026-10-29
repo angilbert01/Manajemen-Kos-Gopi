@@ -59,9 +59,11 @@ export interface Ringkasan {
   tagihan_nominal_lunas?: number;
   tagihan_belum_lunas?: number;
   tagihan_nominal_belum_lunas?: number;
+  tagihan_dicicil?: number;
 }
 
 export type StatusTagihan = 'Belum Lunas' | 'Lunas';
+export type StatusBayar = 'Belum Bayar' | 'Dicicil' | 'Lunas';
 
 export interface Tagihan {
   id: number;
@@ -76,12 +78,26 @@ export interface Tagihan {
   catatan: string | null;
   created_at: string;
   updated_at: string;
+  terbayar: number;
+  sisa: number;
+  jumlah_pembayaran: number;
+  status_bayar: StatusBayar;
   penghuni_nama: string;
   penghuni_no_hp: string;
   penghuni_masuk: string;
   kamar_nomor: string;
   kamar_tipe: string;
   kamar_harga: number;
+}
+
+export interface Pembayaran {
+  id: number;
+  tagihan_id: number;
+  jumlah: number;
+  tanggal_bayar: string;
+  metode_pembayaran: string;
+  catatan: string | null;
+  created_at: string;
 }
 
 export interface RekapTagihan {
@@ -92,6 +108,8 @@ export interface RekapTagihan {
   nominal_lunas: number;
   total_belum_lunas: number;
   nominal_belum_lunas: number;
+  total_dicicil?: number;
+  nominal_dicicil?: number;
   daftar_lunas: Tagihan[];
   daftar_belum_lunas: Tagihan[];
   bulan_tersedia: string[];
@@ -107,6 +125,13 @@ export interface GenerateTagihanResult {
 }
 
 export interface LunasPayload {
+  tanggal_bayar?: string;
+  metode_pembayaran?: string;
+  catatan?: string;
+}
+
+export interface PembayaranPayload {
+  jumlah: number;
   tanggal_bayar?: string;
   metode_pembayaran?: string;
   catatan?: string;
@@ -186,6 +211,9 @@ export const api = {
     generate: (bulan?: string) => request<GenerateTagihanResult>('POST', '/tagihan/generate', { bulan }),
     lunas: (id: number, payload: LunasPayload = {}) => request<Tagihan>('PATCH', `/tagihan/${id}/lunas`, payload),
     batal: (id: number) => request<Tagihan>('PATCH', `/tagihan/${id}/batal`, {}),
+    pembayaran: (id: number) => request<Pembayaran[]>('GET', `/tagihan/${id}/pembayaran`),
+    bayar: (id: number, payload: PembayaranPayload) => request<Tagihan>('POST', `/tagihan/${id}/pembayaran`, payload),
+    hapusPembayaran: (pembayaranId: number) => request<Tagihan>('DELETE', `/pembayaran/${pembayaranId}`),
     remove: (id: number) => request<void>('DELETE', `/tagihan/${id}`),
   },
 };

@@ -4,6 +4,8 @@ import {
   MdCalendarToday,
   MdChat,
   MdCheckCircle,
+  MdDelete,
+  MdHistory,
   MdPrint,
   MdReceipt,
   MdRefresh,
@@ -11,7 +13,7 @@ import {
   MdWarning,
 } from 'react-icons/md';
 import { api, namaBulan, rupiah, tanggal, today } from '../api';
-import type { AdminProfile, LunasPayload, RekapTagihan, Tagihan } from '../api';
+import type { AdminProfile, Pembayaran, RekapTagihan, Tagihan } from '../api';
 import { Field, Modal } from '../components';
 
 // EP-02 Sistem Tagihan Bulanan & Status Pembayaran (WBS 2.1, 2.2, 2.3)
@@ -38,7 +40,7 @@ export default function TagihanPage({ notify }: Props) {
 
   // Filter
   const [selectedBulan, setSelectedBulan] = useState(() => today().slice(0, 7));
-  const [statusFilter, setStatusFilter] = useState<'' | 'Belum Lunas' | 'Lunas'>('');
+  const [statusFilter, setStatusFilter] = useState<'' | 'Belum Lunas' | 'Dicicil' | 'Lunas'>('');
   const [query, setQuery] = useState('');
 
   // Modals
@@ -104,9 +106,11 @@ export default function TagihanPage({ notify }: Props) {
     let cleanPhone = t.penghuni_no_hp.replace(/\D/g, '');
     if (cleanPhone.startsWith('0')) cleanPhone = `62${cleanPhone.slice(1)}`;
     const kosName = admin?.nama_kos || 'Kos Gopi';
-    const text = encodeURIComponent(
-      `Halo Kak ${t.penghuni_nama}, kami dari manajemen ${kosName} menginformasikan tagihan sewa kamar ${t.kamar_nomor} (${t.kamar_tipe}) untuk periode ${namaBulan(t.bulan)} sebesar ${rupiah(t.nominal)} jatuh tempo pada ${tanggal(t.jatuh_tempo)}. Mohon konfirmasi jika sudah melakukan pembayaran ya. Terima kasih! 🙏`,
-    );
+    const pesan =
+      t.status_bayar === 'Dicicil'
+        ? `Halo Kak ${t.penghuni_nama}, kami dari manajemen ${kosName} menginformasikan sisa tagihan sewa kamar ${t.kamar_nomor} (${t.kamar_tipe}) periode ${namaBulan(t.bulan)} sebesar ${rupiah(t.sisa)} (dari total ${rupiah(t.nominal)}, sudah terbayar ${rupiah(t.terbayar)}) jatuh tempo pada ${tanggal(t.jatuh_tempo)}. Mohon konfirmasi jika sudah melakukan pembayaran ya. Terima kasih! 🙏`
+        : `Halo Kak ${t.penghuni_nama}, kami dari manajemen ${kosName} menginformasikan tagihan sewa kamar ${t.kamar_nomor} (${t.kamar_tipe}) untuk periode ${namaBulan(t.bulan)} sebesar ${rupiah(t.nominal)} jatuh tempo pada ${tanggal(t.jatuh_tempo)}. Mohon konfirmasi jika sudah melakukan pembayaran ya. Terima kasih! 🙏`;
+    const text = encodeURIComponent(pesan);
     window.open(`https://api.whatsapp.com/send?phone=${cleanPhone}&text=${text}`, '_blank');
   };
 
@@ -233,6 +237,13 @@ export default function TagihanPage({ notify }: Props) {
             </button>
             <button
               type="button"
+              className={`btn ${statusFilter === 'Dicicil' ? 'btn-info text-white font-weight-bold' : 'btn-outline-secondary'}`}
+              onClick={() => setStatusFilter('Dicicil')}
+            >
+              ⏳ Dicicil ({rekap?.total_dicicil ?? 0})
+            </button>
+            <button
+              type="button"
               className={`btn ${statusFilter === 'Lunas' ? 'btn-success' : 'btn-outline-secondary'}`}
               onClick={() => setStatusFilter('Lunas')}
             >
@@ -300,8 +311,10 @@ export default function TagihanPage({ notify }: Props) {
                 <tbody>
                   {list.map((t) => {
                     const isLunas = t.status === 'Lunas';
+                    const isDicicil = !isLunas && t.status_bayar === 'Dicicil';
+                    const isLewat = !isLunas && t.jatuh_tempo < today();
                     return (
-                      <tr key={t.id} style={isLunas ? { opacity: 0.95 } : { backgroundColor: '#fffdf5' }}>
+                      <tr key={t.id} style={isLunas ? { opacity: 0.95 } : isDicicil ? { backgroundColor: '#f9fbff' } : { backgroundColor: '#fffdf5' }}>
                         <td>
                           <div className="font-weight-500">
                             <strong>{t.kamar_nomor}</strong>{' '}
@@ -318,13 +331,23 @@ export default function TagihanPage({ notify }: Props) {
                         </td>
 
                         <td>
-                          <strong className="text-dark font-weight-bold">{rupiah(t.nominal)}</strong>
+                          {isDicicil ? (
+                            <div>
+                              <strong className="text-danger font-weight-bold">{rupiah(t.sisa)}</strong>
+                              <small className="text-muted d-block">Sisa dr {rupiah(t.nominal)}</small>
+                              <div className="progress mt-1" style={{ height: '3px', width: '90px' }}>
+                                <div className="progress-bar bg-info" style={{ width: `${Math.round((t.terbayar / t.nominal) * 100)}%` }} />
+                              </div>
+                            </div>
+                          ) : (
+                            <strong className="text-dark font-weight-bold">{rupiah(t.nominal)}</strong>
+                          )}
                         </td>
 
                         <td>
                           <div className="small">
                             {tanggal(t.jatuh_tempo)}
-                            {!isLunas && t.jatuh_tempo < today() && (
+                            {isLewat && (
                               <span className="badge badge-danger ml-1" title="Sudah lewat jatuh tempo">
                                 Lewat
                               </span>
@@ -337,6 +360,13 @@ export default function TagihanPage({ notify }: Props) {
                             <span className="badge badge-success d-inline-flex align-items-center">
                               <MdCheckCircle size={13} className="mr-1" /> Lunas
                             </span>
+                          ) : isDicicil ? (
+                            <div>
+                              <span className="badge badge-info text-white d-inline-flex align-items-center">
+                                <MdReceipt size={13} className="mr-1" /> Dicicil ({t.jumlah_pembayaran}x)
+                              </span>
+                              <div className="small text-muted mt-1">Masuk: {rupiah(t.terbayar)}</div>
+                            </div>
                           ) : (
                             <span className="badge badge-warning d-inline-flex align-items-center text-dark">
                               <MdWarning size={13} className="mr-1" /> Belum Lunas
@@ -352,6 +382,11 @@ export default function TagihanPage({ notify }: Props) {
                                 {t.metode_pembayaran || 'Tunai'}
                               </span>
                             </div>
+                          ) : isDicicil ? (
+                            <div className="small text-muted">
+                              <span>{t.jumlah_pembayaran}x cicilan</span>
+                              <div>Terakhir: {t.tanggal_bayar ? tanggal(t.tanggal_bayar) : '–'}</div>
+                            </div>
                           ) : (
                             <span className="text-muted small">–</span>
                           )}
@@ -361,14 +396,13 @@ export default function TagihanPage({ notify }: Props) {
                           <div className="d-inline-flex align-items-center" style={{ gap: '0.35rem' }}>
                             {!isLunas ? (
                               <>
-                                {/* WBS 2.3: Tombol konfirmasi lunas */}
                                 <button
                                   type="button"
                                   className="btn btn-sm btn-success d-inline-flex align-items-center"
                                   onClick={() => setConfirmLunas(t)}
-                                  title="Konfirmasi pembayaran lunas"
+                                  title="Catat pembayaran (lunas penuh atau cicilan)"
                                 >
-                                  <MdCheckCircle size={15} className="mr-1" /> Tandai Lunas
+                                  <MdCheckCircle size={15} className="mr-1" /> {isDicicil ? 'Bayar Cicilan' : 'Bayar / Cicil'}
                                 </button>
                                 <button
                                   type="button"
@@ -378,6 +412,16 @@ export default function TagihanPage({ notify }: Props) {
                                 >
                                   <MdChat size={15} /> WA
                                 </button>
+                                {isDicicil && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm btn-outline-primary d-inline-flex align-items-center"
+                                    onClick={() => setViewKuitansi(t)}
+                                    title="Lihat kuitansi sementara cicilan"
+                                  >
+                                    <MdReceipt size={15} />
+                                  </button>
+                                )}
                               </>
                             ) : (
                               <>
@@ -393,7 +437,7 @@ export default function TagihanPage({ notify }: Props) {
                                   type="button"
                                   className="btn btn-sm btn-outline-secondary"
                                   onClick={() => handleBatalLunas(t)}
-                                  title="Batalkan status lunas (kembalikan ke belum lunas)"
+                                  title="Batalkan status lunas (reset pembayaran)"
                                 >
                                   <MdUndo size={14} />
                                 </button>
@@ -446,22 +490,65 @@ function ModalKonfirmasiLunas({
   onClose: () => void;
   onSuccess: (t: Tagihan) => void;
 }) {
+  const sisa = tagihan.sisa > 0 ? tagihan.sisa : tagihan.nominal;
+  const [mode, setMode] = useState<'penuh' | 'cicil'>('penuh');
+  const [jumlah, setJumlah] = useState(String(sisa));
   const [tglBayar, setTglBayar] = useState(today());
   const [metode, setMetode] = useState('Transfer BCA');
   const [catatan, setCatatan] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [riwayat, setRiwayat] = useState<Pembayaran[]>([]);
+
+  useEffect(() => {
+    if (tagihan.jumlah_pembayaran > 0) {
+      api.tagihan
+        .pembayaran(tagihan.id)
+        .then((data) => setRiwayat(data))
+        .catch(() => null);
+    }
+  }, [tagihan.id, tagihan.jumlah_pembayaran]);
+
+  const handleSelectMode = (newMode: 'penuh' | 'cicil') => {
+    setMode(newMode);
+    if (newMode === 'penuh') {
+      setJumlah(String(sisa));
+    } else {
+      const half = Math.round(sisa / 2 / 50000) * 50000;
+      setJumlah(String(half > 0 ? half : sisa));
+    }
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    const nominalBayar = mode === 'penuh' ? sisa : Number(jumlah);
+    if (!nominalBayar || nominalBayar <= 0) {
+      setError('Jumlah pembayaran harus lebih dari 0.');
+      return;
+    }
+    if (nominalBayar > sisa) {
+      setError(`Jumlah pembayaran melebihi sisa tagihan (${rupiah(sisa)}).`);
+      return;
+    }
+
     setSaving(true);
+    setError('');
     try {
-      const payload: LunasPayload = {
-        tanggal_bayar: tglBayar,
-        metode_pembayaran: metode,
-        catatan: catatan.trim() || undefined,
-      };
-      const updated = await api.tagihan.lunas(tagihan.id, payload);
+      let updated: Tagihan;
+      if (mode === 'penuh' || nominalBayar >= sisa) {
+        updated = await api.tagihan.lunas(tagihan.id, {
+          tanggal_bayar: tglBayar,
+          metode_pembayaran: metode,
+          catatan: catatan.trim() || undefined,
+        });
+      } else {
+        updated = await api.tagihan.bayar(tagihan.id, {
+          jumlah: nominalBayar,
+          tanggal_bayar: tglBayar,
+          metode_pembayaran: metode,
+          catatan: catatan.trim() || undefined,
+        });
+      }
       onSuccess(updated);
     } catch (err) {
       setError((err as Error).message);
@@ -470,8 +557,19 @@ function ModalKonfirmasiLunas({
     }
   };
 
+  const handleHapusCicilan = async (pembayaranId: number) => {
+    if (!window.confirm('Hapus transaksi pembayaran ini?')) return;
+    try {
+      const updated = await api.tagihan.hapusPembayaran(pembayaranId);
+      setRiwayat((prev) => prev.filter((p) => p.id !== pembayaranId));
+      onSuccess(updated);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
   return (
-    <Modal title="Konfirmasi Pembayaran Lunas" onClose={onClose}>
+    <Modal title={tagihan.status_bayar === 'Dicicil' ? 'Pembayaran Tagihan (Cicilan)' : 'Konfirmasi Pembayaran'} onClose={onClose}>
       <form onSubmit={submit} className="form">
         {error && <div className="alert alert-danger">{error}</div>}
 
@@ -490,49 +588,136 @@ function ModalKonfirmasiLunas({
             <span className="text-muted small">Periode:</span>
             <span>{namaBulan(tagihan.bulan)}</span>
           </div>
+          <div className="d-flex justify-content-between mb-1">
+            <span className="text-muted small">Total Tagihan:</span>
+            <strong className="text-dark">{rupiah(tagihan.nominal)}</strong>
+          </div>
+          {tagihan.terbayar > 0 && (
+            <div className="d-flex justify-content-between mb-1 text-success small">
+              <span>Sudah Terbayar:</span>
+              <strong>{rupiah(tagihan.terbayar)}</strong>
+            </div>
+          )}
           <div className="d-flex justify-content-between pt-2 mt-2" style={{ borderTop: '1px dashed #cbd5e0' }}>
-            <span className="font-weight-500">Total Tagihan:</span>
-            <strong className="text-success h5 mb-0">{rupiah(tagihan.nominal)}</strong>
+            <span className="font-weight-bold text-dark">Sisa Tagihan:</span>
+            <strong className="text-danger h5 mb-0">{rupiah(sisa)}</strong>
           </div>
         </div>
 
-        <Field label="Tanggal Bayar *">
-          <input
-            type="date"
-            className="form-control"
-            value={tglBayar}
-            onChange={(e) => setTglBayar(e.target.value)}
-            required
-          />
-        </Field>
+        {/* Pilihan Mode Pembayaran */}
+        <div className="mb-3">
+          <label className="flabel d-block mb-1">Pilihan Pembayaran *</label>
+          <div className="btn-group btn-group-sm w-100" role="group">
+            <button
+              type="button"
+              className={`btn ${mode === 'penuh' ? 'btn-success font-weight-bold' : 'btn-outline-secondary'}`}
+              onClick={() => handleSelectMode('penuh')}
+              style={{ flex: 1 }}
+            >
+              ✓ Bayar Penuh ({rupiah(sisa)})
+            </button>
+            <button
+              type="button"
+              className={`btn ${mode === 'cicil' ? 'btn-primary font-weight-bold' : 'btn-outline-secondary'}`}
+              onClick={() => handleSelectMode('cicil')}
+              style={{ flex: 1 }}
+            >
+              ⏳ Cicil / Bayar Sebagian
+            </button>
+          </div>
+        </div>
 
-        <Field label="Metode Pembayaran *">
-          <select className="form-control" value={metode} onChange={(e) => setMetode(e.target.value)}>
-            {METODE_LIST.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </Field>
+        {mode === 'cicil' && (
+          <Field label={`Jumlah Pembayaran Cicilan (Maks. ${rupiah(sisa)}) *`}>
+            <input
+              type="number"
+              className="form-control"
+              min={10000}
+              max={sisa}
+              step={50000}
+              value={jumlah}
+              onChange={(e) => setJumlah(e.target.value)}
+              placeholder="mis. 500000"
+              required
+            />
+          </Field>
+        )}
+
+        <div className="row2">
+          <Field label="Tanggal Bayar *">
+            <input
+              type="date"
+              className="form-control"
+              value={tglBayar}
+              onChange={(e) => setTglBayar(e.target.value)}
+              required
+            />
+          </Field>
+
+          <Field label="Metode Pembayaran *">
+            <select className="form-control" value={metode} onChange={(e) => setMetode(e.target.value)}>
+              {METODE_LIST.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
 
         <Field label="Catatan (opsional)">
           <input
             type="text"
             className="form-control"
-            placeholder="mis. Bukti transfer di WA / No. Ref bank"
+            placeholder={mode === 'cicil' ? 'mis. Cicilan ke-1 / DP via BCA' : 'mis. Lunas transfer via BCA'}
             value={catatan}
             onChange={(e) => setCatatan(e.target.value)}
           />
         </Field>
 
+        {riwayat.length > 0 && (
+          <div className="mb-3 pt-2 border-top">
+            <div className="small font-weight-bold text-muted mb-2 d-flex align-items-center">
+              <MdHistory className="mr-1" size={15} /> Riwayat Pembayaran Sebelumnya ({riwayat.length}x)
+            </div>
+            <div className="list-group list-group-flush border rounded small" style={{ maxHeight: '140px', overflowY: 'auto' }}>
+              {riwayat.map((p, idx) => (
+                <div key={p.id} className="list-group-item p-2 d-flex justify-content-between align-items-center">
+                  <div>
+                    <span className="badge badge-light border mr-1">#{idx + 1}</span>
+                    <strong>{rupiah(p.jumlah)}</strong>
+                    <span className="text-muted ml-1">· {tanggal(p.tanggal_bayar)} ({p.metode_pembayaran})</span>
+                    {p.catatan && <small className="text-muted d-block">{p.catatan}</small>}
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-danger p-1"
+                    title="Hapus transaksi cicilan ini"
+                    onClick={() => handleHapusCicilan(p.id)}
+                  >
+                    <MdDelete size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="formactions">
           <button type="button" className="btn btn-outline-secondary" onClick={onClose} disabled={saving}>
             Batal
           </button>
-          <button type="submit" className="btn btn-success d-inline-flex align-items-center" disabled={saving}>
+          <button
+            type="submit"
+            className={`btn ${mode === 'penuh' ? 'btn-success' : 'btn-primary'} d-inline-flex align-items-center`}
+            disabled={saving}
+          >
             <MdCheckCircle size={16} className="mr-1" />
-            {saving ? 'Menyimpan...' : 'Tandai Sebagai Lunas'}
+            {saving
+              ? 'Menyimpan...'
+              : mode === 'penuh'
+              ? 'Simpan & Tandai Lunas'
+              : `Catat Cicilan (${rupiah(Number(jumlah) || 0)})`}
           </button>
         </div>
       </form>
@@ -569,9 +754,15 @@ function ModalKuitansi({
             {noHp && <div className="small text-muted">Telp/WA: {noHp}</div>}
           </div>
           <div className="text-right">
-            <span className="badge badge-success px-3 py-2 font-weight-bold" style={{ fontSize: '1rem', letterSpacing: '1px' }}>
-              ✓ LUNAS
-            </span>
+            {tagihan.status === 'Lunas' ? (
+              <span className="badge badge-success px-3 py-2 font-weight-bold" style={{ fontSize: '1rem', letterSpacing: '1px' }}>
+                ✓ LUNAS
+              </span>
+            ) : (
+              <span className="badge badge-info px-3 py-2 font-weight-bold text-white" style={{ fontSize: '0.9rem', letterSpacing: '1px' }}>
+                ⏳ CICILAN ({tagihan.jumlah_pembayaran}x)
+              </span>
+            )}
             <div className="small text-muted mt-1">No: INV-{tagihan.bulan.replace('-', '')}-{tagihan.id}</div>
           </div>
         </div>
@@ -592,7 +783,7 @@ function ModalKuitansi({
             <div className="col-8">Sewa Kamar Periode {namaBulan(tagihan.bulan)}</div>
           </div>
           <div className="row small mb-2">
-            <div className="col-4 text-muted">Tanggal Bayar:</div>
+            <div className="col-4 text-muted">Tanggal Bayar Terakhir:</div>
             <div className="col-8">{tagihan.tanggal_bayar ? tanggal(tagihan.tanggal_bayar) : '–'}</div>
           </div>
           <div className="row small mb-2">
@@ -608,15 +799,25 @@ function ModalKuitansi({
         </div>
 
         <div className="p-3 my-3 rounded" style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-          <div className="d-flex justify-content-between align-items-center">
-            <span className="font-weight-500 text-muted">Jumlah Pembayaran:</span>
-            <span className="h4 text-success mb-0 font-weight-bold">{rupiah(tagihan.nominal)}</span>
+          <div className="d-flex justify-content-between align-items-center mb-1">
+            <span className="font-weight-500 text-muted">Total Tagihan Bulanan:</span>
+            <span className="font-weight-bold text-dark">{rupiah(tagihan.nominal)}</span>
           </div>
+          <div className="d-flex justify-content-between align-items-center mb-1">
+            <span className="font-weight-500 text-success">Sudah Diterima (Terbayar):</span>
+            <span className="h5 text-success mb-0 font-weight-bold">{rupiah(tagihan.terbayar || (tagihan.status === 'Lunas' ? tagihan.nominal : 0))}</span>
+          </div>
+          {tagihan.status !== 'Lunas' && (
+            <div className="d-flex justify-content-between align-items-center pt-2 mt-2 border-top">
+              <span className="font-weight-500 text-danger">Sisa Tagihan Tertunggak:</span>
+              <span className="h5 text-danger mb-0 font-weight-bold">{rupiah(tagihan.sisa)}</span>
+            </div>
+          )}
         </div>
 
         <div className="d-flex justify-content-between align-items-end pt-3 text-muted small">
           <div>
-            <em>Terima kasih atas pembayaran Anda.</em>
+            <em>{tagihan.status === 'Lunas' ? 'Terima kasih atas pembayaran Anda.' : 'Kuitansi pembayaran cicilan sementara.'}</em>
           </div>
           <div className="text-right">
             <div>Malang, {tagihan.tanggal_bayar ? tanggal(tagihan.tanggal_bayar) : today()}</div>
