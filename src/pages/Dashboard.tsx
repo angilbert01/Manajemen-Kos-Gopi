@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-import { MdAdd, MdBusiness, MdHotel, MdPersonAdd, MdViewModule } from 'react-icons/md';
+import { MdAdd, MdHotel } from 'react-icons/md';
+import { Building2, LayoutGrid, UserPlus } from 'lucide-react';
 import { api, ApiError, rupiah, tanggal, today } from '../api';
 import type { Kamar, KamarForm, Penghuni, PenghuniForm, Ringkasan } from '../api';
 import { Field, IconWidget, Modal, Stat, StatusPill } from '../components';
@@ -144,7 +145,6 @@ export default function Dashboard({ go, notify }: Props) {
           title="Total Kamar"
           value={r ? totalKamar : '–'}
           hint="Terdaftar di database"
-          color="primary"
           progress={100}
           progressLabel="Kapasitas kos"
         />
@@ -152,7 +152,6 @@ export default function Dashboard({ go, notify }: Props) {
           title="Kamar Terisi"
           value={r ? `${terisi} / ${totalKamar}` : '–'}
           hint={`${r?.total_penghuni ?? 0} penghuni aktif`}
-          color="secondary"
           progress={occPct}
           progressLabel="Tingkat hunian"
         />
@@ -160,7 +159,6 @@ export default function Dashboard({ go, notify }: Props) {
           title="Kamar Kosong"
           value={r ? kosong : '–'}
           hint="Siap dihuni"
-          color="success"
           progress={kosongPct}
           progressLabel="Ketersediaan"
         />
@@ -168,7 +166,6 @@ export default function Dashboard({ go, notify }: Props) {
           title="Sewa Aktif / Bln"
           value={r ? rupiah(pendapatan) : '–'}
           hint={`Dari potensi ${rupiah(potensi)}`}
-          color="info"
           progress={revPct}
           progressLabel="Realisasi sewa"
         />
@@ -360,22 +357,19 @@ export default function Dashboard({ go, notify }: Props) {
       {/* Row 3: CardGroup IconWidgets */}
       <div className="card-group mb-3">
         <IconWidget
-          bgColor="primary"
-          Icon={MdBusiness}
+          Icon={Building2}
           title="Tambah Kamar Baru"
           subtitle="Tambah unit kamar ke katalog"
           onClick={() => setAddingKamar(true)}
         />
         <IconWidget
-          bgColor="secondary"
-          Icon={MdPersonAdd}
+          Icon={UserPlus}
           title={`${penghuniList.length} Penghuni Aktif`}
           subtitle="Buka halaman kelola penghuni"
           onClick={() => go('Penghuni')}
         />
         <IconWidget
-          bgColor="info"
-          Icon={MdViewModule}
+          Icon={LayoutGrid}
           title={`${kosong} Kamar Tersedia`}
           subtitle="Buka katalog kamar lengkap"
           onClick={() => go('Kamar')}
