@@ -2,7 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api, ApiError, rupiah, tanggal, today } from '../api';
 import type { Kamar, Penghuni, PenghuniForm } from '../api';
-import { Field } from '../components';
+import { Field, selectClass } from '../components';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 // EP-01 US-03 (WBS 1.3): form registrasi penghuni baru (< 2 menit) + daftar penghuni.
 
@@ -91,104 +97,125 @@ export default function PenghuniPage({ notify, presetKamarId, onChanged }: Props
 
   return (
     <>
-      {error && <div className="alert alert-danger mb-3">{error}</div>}
-      <section className="cr-row cr-row--charts">
-        <article className="card">
-          <div className="card-header d-flex justify-content-between align-items-center">
-            <span>Daftar Penghuni {semua ? '(Termasuk Riwayat)' : 'Aktif'}</span>
-            <label className="check">
-              <input type="checkbox" checked={semua} onChange={(e) => setSemua(e.target.checked)} /> Tampilkan riwayat
-            </label>
-          </div>
-          <div className="card-body">
-            <div className="filters mb-3">
-              <input
-                type="search"
-                className="form-control"
-                placeholder="Cari nama, kamar, atau nomor HP..."
-                aria-label="Cari penghuni"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </div>
-            <div className="tablewrap">
-              <table className="table table-hover">
-                <thead>
-                  <tr>
-                    <th>Penghuni</th>
-                    <th>Kamar</th>
-                    <th>No. HP</th>
-                    <th>Tanggal Masuk</th>
-                    <th>Status</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      <section className="grid gap-4 lg:grid-cols-3">
+        <Card className="min-w-0 lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Daftar Penghuni {semua ? '(Termasuk Riwayat)' : 'Aktif'}</CardTitle>
+            <CardAction>
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                <input
+                  type="checkbox"
+                  className="size-4 accent-primary"
+                  checked={semua}
+                  onChange={(e) => setSemua(e.target.checked)}
+                />
+                Tampilkan riwayat
+              </label>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Input
+              type="search"
+              placeholder="Cari nama, kamar, atau nomor HP..."
+              aria-label="Cari penghuni"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Penghuni</TableHead>
+                    <TableHead>Kamar</TableHead>
+                    <TableHead>Tanggal Masuk</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {shown.length ? (
                     shown.map((p) => (
-                      <tr key={p.id}>
-                        <td className="font-weight-500">{p.nama}</td>
-                        <td>{p.kamar_nomor}</td>
-                        <td>{p.no_hp}</td>
-                        <td>
+                      <TableRow key={p.id}>
+                        <TableCell>
+                          <div className="font-medium">{p.nama}</div>
+                          <div className="text-xs text-muted-foreground tabular-nums">{p.no_hp}</div>
+                        </TableCell>
+                        <TableCell>{p.kamar_nomor}</TableCell>
+                        <TableCell>
                           {tanggal(p.tanggal_masuk)}
-                          {p.tanggal_keluar && <div className="text-muted small">Keluar {tanggal(p.tanggal_keluar)}</div>}
-                        </td>
-                        <td>
-                          <span className={`badge badge-${p.aktif ? 'success' : 'secondary'}`}>
-                            {p.aktif ? 'Aktif' : 'Keluar'}
-                          </span>
-                        </td>
-                        <td>
-                          {p.aktif === 1 && (
-                            <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => keluar(p)}>
-                              Catat Keluar
-                            </button>
+                          {p.tanggal_keluar && <div className="text-xs text-muted-foreground">Keluar {tanggal(p.tanggal_keluar)}</div>}
+                        </TableCell>
+                        <TableCell>
+                          {p.aktif ? (
+                            <Badge variant="outline" className="gap-1.5">
+                              <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden />
+                              Aktif
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary">Keluar</Badge>
                           )}
-                        </td>
-                      </tr>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {p.aktif === 1 && (
+                            <Button size="sm" variant="outline" onClick={() => keluar(p)}>
+                              Catat Keluar
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
                     ))
                   ) : (
-                    <tr>
-                      <td colSpan={6} className="empty">
+                    <TableRow>
+                      <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
                         {penghuni.length ? 'Tidak ada data yang cocok.' : 'Belum ada penghuni terdaftar.'}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   )}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
-          </div>
-        </article>
+          </CardContent>
+        </Card>
 
-        <article className="card">
-          <div className="card-header">Registrasi Penghuni Baru</div>
-          <div className="card-body">
-            <form className="form" onSubmit={submit} noValidate>
-              {errors._ && <div className="alert alert-danger">{errors._}</div>}
+        <Card className="h-fit">
+          <CardHeader>
+            <CardTitle>Registrasi Penghuni Baru</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form className="grid gap-4" onSubmit={submit} noValidate>
+              {errors._ && (
+                <Alert variant="destructive">
+                  <AlertDescription>{errors._}</AlertDescription>
+                </Alert>
+              )}
               <Field label="Nama lengkap *" error={errors.nama}>
-                <input
+                <Input
                   ref={namaRef}
-                  className="form-control"
                   value={form.nama}
                   onChange={set('nama')}
                   placeholder="mis. Andi Pratama"
                   maxLength={100}
                   autoComplete="off"
+                  aria-invalid={!!errors.nama}
                 />
               </Field>
               <Field label="Nomor HP *" error={errors.no_hp} hint="Format 08xx / 628xx">
-                <input
+                <Input
                   type="tel"
-                  className="form-control"
                   inputMode="tel"
                   value={form.no_hp}
                   onChange={set('no_hp')}
                   placeholder="081234567890"
+                  aria-invalid={!!errors.no_hp}
                 />
               </Field>
               <Field label="Kamar *" error={errors.kamar_id} hint={`${kosong.length} kamar kosong tersedia`}>
-                <select className="form-control" value={form.kamar_id} onChange={set('kamar_id')}>
+                <select className={selectClass} value={form.kamar_id} onChange={set('kamar_id')} aria-invalid={!!errors.kamar_id}>
                   <option value="">-- Pilih kamar kosong --</option>
                   {kamar.map((k) => (
                     <option key={k.id} value={k.id} disabled={k.status === 'Terisi'}>
@@ -199,29 +226,29 @@ export default function PenghuniPage({ notify, presetKamarId, onChanged }: Props
                 </select>
               </Field>
               <Field label="Tanggal masuk *" error={errors.tanggal_masuk}>
-                <input type="date" className="form-control" value={form.tanggal_masuk} onChange={set('tanggal_masuk')} />
+                <Input type="date" value={form.tanggal_masuk} onChange={set('tanggal_masuk')} aria-invalid={!!errors.tanggal_masuk} />
               </Field>
-              <div className="formactions">
-                <button
+              <div className="flex justify-end gap-2">
+                <Button
                   type="button"
-                  className="btn btn-outline-secondary"
+                  variant="outline"
                   onClick={() => {
                     setForm(blank());
                     setErrors({});
                   }}
                 >
                   Reset
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={saving || !kosong.length}>
+                </Button>
+                <Button type="submit" disabled={saving || !kosong.length}>
                   {saving ? 'Menyimpan...' : 'Simpan Penghuni'}
-                </button>
+                </Button>
               </div>
               {!kosong.length && kamar.length > 0 && (
-                <div className="fhint">Semua kamar terisi. Tambah kamar baru atau catat penghuni keluar.</div>
+                <p className="text-xs text-muted-foreground">Semua kamar terisi. Tambah kamar baru atau catat penghuni keluar.</p>
               )}
             </form>
-          </div>
-        </article>
+          </CardContent>
+        </Card>
       </section>
     </>
   );
