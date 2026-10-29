@@ -1,6 +1,6 @@
 # Manajemen Kos Gopi
 
-Sistem manajemen kos (MPTI Kelompok 2). React 19 + Vite (frontend) · Express 5 + SQLite bawaan Node (`node:sqlite`) (backend).
+Sistem manajemen kos (MPTI Kelompok 2). React 19 + Vite + Tailwind v4 + shadcn/ui (frontend) · Express 5 + SQLite bawaan Node (`node:sqlite`) (backend).
 
 ## Menjalankan
 
@@ -27,8 +27,9 @@ server/
   migrations/001_kamar_penghuni.sql  skema + trigger status kamar (WBS 1.1)
   db.ts  app.ts  validation.ts  index.ts  seed.ts  api.test.ts
 src/
-  pages/  Dashboard.tsx  Kamar.tsx (WBS 1.2)  Penghuni.tsx (WBS 1.3)
-  api.ts  components.tsx  main.tsx  style.css
+  pages/  Dashboard.tsx  Kamar.tsx (WBS 1.2)  Penghuni.tsx (WBS 1.3)  Profil.tsx
+  components/ui/  komponen shadcn/ui (tambah: npx shadcn@latest add <nama>)
+  api.ts  components.tsx  app-sidebar.tsx  main.tsx  index.css
 docs/skema-database.md   ERD & aturan status kamar
 Konteks/                 dokumen proyek (inisiasi, backlog, sprint)
 ```

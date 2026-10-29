@@ -1,7 +1,4 @@
-@layer legacy, theme, base, components, utilities;
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-/* shortcut: style.css lama (react-reduction) di layer terendah selama transisi; dihapus di Task 8 */
-@import "./style.css" layer(legacy);
 @import "tailwindcss";
 @import "tw-animate-css";
 

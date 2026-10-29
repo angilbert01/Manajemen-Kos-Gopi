@@ -190,7 +190,7 @@ export default function Dashboard({ go, notify }: Props) {
             <CardDescription>
               {katalogFiltered.length} tampil · {kosong} kosong · {terisi} terisi
             </CardDescription>
-            <CardAction className="flex gap-2">
+            <CardAction className="flex gap-2 max-sm:col-start-1 max-sm:row-span-1 max-sm:row-start-3 max-sm:justify-self-start">
               <Button size="sm" onClick={() => setAddingKamar(true)}>
                 <Plus /> Tambah Kamar
               </Button>
