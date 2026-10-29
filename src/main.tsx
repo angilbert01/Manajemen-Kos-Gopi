@@ -11,6 +11,7 @@ import {
   MdSearch,
   MdWidgets,
 } from 'react-icons/md';
+import './index.css';
 import './style.css';
 import { api } from './api';
 import type { AdminProfile } from './api';
