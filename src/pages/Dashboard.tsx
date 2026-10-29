@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-import { MdAdd, MdHotel } from 'react-icons/md';
-import { Building2, LayoutGrid, UserPlus } from 'lucide-react';
+import { BedDouble, Building2, LayoutGrid, Plus, UserPlus } from 'lucide-react';
 import { api, ApiError, rupiah, tanggal, today } from '../api';
 import type { Kamar, KamarForm, Penghuni, PenghuniForm, Ringkasan } from '../api';
-import { Field, IconWidget, Modal, Stat, StatusPill } from '../components';
+import { Field, IconWidget, Modal, Stat, StatusPill, selectClass } from '../components';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Progress } from '@/components/ui/progress';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { cn } from '@/lib/utils';
 
 const PHONE_RE = /^(\+62|62|0)8\d{7,12}$/;
 const TIPE_LIST = ['Standar', 'AC', 'VIP'];
@@ -136,11 +143,15 @@ export default function Dashboard({ go, notify }: Props) {
   );
 
   return (
-    <div className="DashboardPage">
-      {apiError && <div className="alert alert-danger mb-3">{apiError}</div>}
+    <>
+      {apiError && (
+        <Alert variant="destructive">
+          <AlertDescription>{apiError}</AlertDescription>
+        </Alert>
+      )}
 
-      {/* Row 1: 4 NumberWidgets 100% Real-Time dari Backend Database */}
-      <div className="cr-row cr-row--4 mb-3">
+      {/* Baris 1: ringkasan real-time dari backend */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
           title="Total Kamar"
           value={r ? totalKamar : '–'}
@@ -171,34 +182,28 @@ export default function Dashboard({ go, notify }: Props) {
         />
       </div>
 
-      {/* Row 2: Sprint 2 Deliverables — Katalog Kamar (WBS 1.2) + Form Registrasi Penghuni (WBS 1.3) */}
-      <div className="cr-row cr-row--charts mb-3">
-        {/* WBS 1.2: Tampilan Katalog Kamar dengan Status Terisi / Kosong */}
-        <div className="card">
-          <div className="card-header d-flex justify-content-between align-items-center">
-            <div>
-              <strong>Katalog & Status Kamar</strong>{' '}
-              <small className="text-muted">({katalogFiltered.length} tampil · {kosong} kosong · {terisi} terisi)</small>
-            </div>
-            <div className="d-flex align-items-center" style={{ gap: '0.4rem' }}>
-              <button
-                type="button"
-                className="btn btn-sm btn-primary d-inline-flex align-items-center"
-                onClick={() => setAddingKamar(true)}
-              >
-                <MdAdd size={16} className="mr-1" /> Tambah Kamar
-              </button>
-              <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => go('Kamar')}>
+      {/* Baris 2: katalog kamar (WBS 1.2) + form registrasi penghuni (WBS 1.3) */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="min-w-0 lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Katalog & Status Kamar</CardTitle>
+            <CardDescription>
+              {katalogFiltered.length} tampil · {kosong} kosong · {terisi} terisi
+            </CardDescription>
+            <CardAction className="flex gap-2">
+              <Button size="sm" onClick={() => setAddingKamar(true)}>
+                <Plus /> Tambah Kamar
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => go('Kamar')}>
                 Kelola Penuh
-              </button>
-            </div>
-          </div>
-
-          <div className="card-body">
-            <div className="filters mb-3">
-              <input
+              </Button>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Input
                 type="search"
-                className="form-control"
+                className="sm:flex-1"
                 placeholder="Cari nomor, tipe, atau nama penghuni..."
                 aria-label="Cari kamar"
                 value={searchKamar}
@@ -206,7 +211,7 @@ export default function Dashboard({ go, notify }: Props) {
               />
               <select
                 aria-label="Filter status kamar"
-                className="form-control"
+                className={`${selectClass} sm:w-44`}
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value as '' | 'Kosong' | 'Terisi')}
               >
@@ -216,7 +221,7 @@ export default function Dashboard({ go, notify }: Props) {
               </select>
               <select
                 aria-label="Filter harga maksimal"
-                className="form-control"
+                className={`${selectClass} sm:w-40`}
                 value={filterHarga}
                 onChange={(e) => setFilterHarga(e.target.value)}
               >
@@ -228,95 +233,94 @@ export default function Dashboard({ go, notify }: Props) {
             </div>
 
             {katalogFiltered.length === 0 ? (
-              <div className="empty">Tidak ada kamar yang cocok dengan filter.</div>
+              <p className="py-10 text-center text-sm text-muted-foreground">Tidak ada kamar yang cocok dengan filter.</p>
             ) : (
-              <div className="rooms rooms--compact">
+              <div className="grid max-h-[28rem] gap-3 overflow-y-auto pr-1 sm:grid-cols-2 xl:grid-cols-3">
                 {katalogFiltered.map((k) => {
                   const isSelected = Number(form.kamar_id) === k.id;
                   return (
-                    <article
+                    <div
                       key={k.id}
-                      className={`card room ${k.status === 'Terisi' ? 'is-occupied' : ''} ${
-                        isSelected ? 'room--selected' : ''
-                      }`}
+                      className={cn('flex flex-col overflow-hidden rounded-lg border', isSelected && 'ring-2 ring-primary')}
                     >
-                      <div className="roomphoto roomphoto--sm">
+                      <div className="flex aspect-[16/9] items-center justify-center bg-muted text-muted-foreground">
                         {k.foto_url ? (
-                          <img src={k.foto_url} alt={k.nomor} loading="lazy" />
+                          <img src={k.foto_url} alt={k.nomor} loading="lazy" className="size-full object-cover" />
                         ) : (
-                          <MdHotel size={30} />
+                          <BedDouble className="size-6" aria-hidden />
                         )}
                       </div>
-                      <div className="card-body roombody">
-                        <div className="d-flex justify-content-between align-items-center">
-                          <strong>{k.nomor}</strong>
+                      <div className="flex flex-1 flex-col gap-1 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate font-medium">{k.nomor}</span>
                           <StatusPill status={k.status} />
                         </div>
-                        <div className="text-muted small">
+                        <p className="text-xs text-muted-foreground">
                           Tipe {k.tipe} · {rupiah(k.harga)}/bln
-                        </div>
+                        </p>
                         {k.status === 'Terisi' ? (
-                          <div className="small mt-1 text-dark">
-                            Penghuni: <strong>{k.penghuni_nama ?? 'Terisi'}</strong>
-                          </div>
+                          <p className="truncate text-sm">
+                            Penghuni: <span className="font-medium">{k.penghuni_nama ?? 'Terisi'}</span>
+                          </p>
                         ) : (
-                          <div className="roomactions">
-                            <button
-                              type="button"
-                              className={`btn btn-sm ${isSelected ? 'btn-outline-secondary' : 'btn-primary'}`}
-                              onClick={() => setForm((f) => ({ ...f, kamar_id: String(k.id) }))}
-                            >
-                              {isSelected ? 'Dipilih di Form ✓' : 'Pilih Kamar Ini'}
-                            </button>
-                          </div>
+                          <Button
+                            size="sm"
+                            variant={isSelected ? 'outline' : 'default'}
+                            className="mt-auto self-start"
+                            onClick={() => setForm((f) => ({ ...f, kamar_id: String(k.id) }))}
+                          >
+                            {isSelected ? 'Dipilih di Form ✓' : 'Pilih Kamar Ini'}
+                          </Button>
                         )}
                       </div>
-                    </article>
+                    </div>
                   );
                 })}
               </div>
             )}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
-        {/* WBS 1.3: Form & API Registrasi Penghuni Baru (Otomatis Ubah Status Kamar -> Terisi) */}
-        <div className="card">
-          <div className="card-header d-flex justify-content-between align-items-center">
-            <strong>Registrasi Penghuni Baru</strong>
-            <span className="badge badge-success">{kamarKosongList.length} kamar kosong</span>
-          </div>
-          <div className="card-body">
-            <p className="text-muted small mb-2">
-              Isi form di bawah atau klik <strong>Pilih Kamar Ini</strong> pada katalog. Setelah disimpan ke API, status
-              kamar otomatis berubah menjadi <strong>Terisi</strong>.
-            </p>
-            <form className="form" onSubmit={submitPenghuni} noValidate>
-              {errors._ && <div className="alert alert-danger">{errors._}</div>}
+        <Card className="h-fit">
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between gap-2">
+              Registrasi Penghuni Baru
+              <Badge variant="outline">{kamarKosongList.length} kamar kosong</Badge>
+            </CardTitle>
+            <CardDescription>
+              Isi form di bawah atau klik <span className="font-medium text-foreground">Pilih Kamar Ini</span> pada katalog.
+              Setelah disimpan ke API, status kamar otomatis berubah menjadi{' '}
+              <span className="font-medium text-foreground">Terisi</span>.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form className="grid gap-4" onSubmit={submitPenghuni} noValidate>
+              {errors._ && (
+                <Alert variant="destructive">
+                  <AlertDescription>{errors._}</AlertDescription>
+                </Alert>
+              )}
               <Field label="Nama lengkap penghuni *" error={errors.nama}>
-                <input
-                  className="form-control"
+                <Input
                   value={form.nama}
                   onChange={setField('nama')}
                   placeholder="mis. Fajar Hidayat"
                   maxLength={100}
+                  aria-invalid={!!errors.nama}
                 />
               </Field>
               <Field label="Nomor HP *" error={errors.no_hp} hint="Format 08xx / 628xx">
-                <input
+                <Input
                   type="tel"
-                  className="form-control"
                   inputMode="tel"
                   value={form.no_hp}
                   onChange={setField('no_hp')}
                   placeholder="081234567890"
+                  aria-invalid={!!errors.no_hp}
                 />
               </Field>
-              <Field
-                label="Pilih kamar *"
-                error={errors.kamar_id}
-                hint="Kamar berstatus Terisi otomatis dikunci"
-              >
-                <select className="form-control" value={form.kamar_id} onChange={setField('kamar_id')}>
+              <Field label="Pilih kamar *" error={errors.kamar_id} hint="Kamar berstatus Terisi otomatis dikunci">
+                <select className={selectClass} value={form.kamar_id} onChange={setField('kamar_id')} aria-invalid={!!errors.kamar_id}>
                   <option value="">-- Pilih kamar kosong --</option>
                   {kamarList.map((k) => (
                     <option key={k.id} value={k.id} disabled={k.status === 'Terisi'}>
@@ -327,35 +331,30 @@ export default function Dashboard({ go, notify }: Props) {
                 </select>
               </Field>
               <Field label="Tanggal mulai sewa *" error={errors.tanggal_masuk}>
-                <input
-                  type="date"
-                  className="form-control"
-                  value={form.tanggal_masuk}
-                  onChange={setField('tanggal_masuk')}
-                />
+                <Input type="date" value={form.tanggal_masuk} onChange={setField('tanggal_masuk')} aria-invalid={!!errors.tanggal_masuk} />
               </Field>
-              <div className="formactions">
-                <button
+              <div className="flex justify-end gap-2">
+                <Button
                   type="button"
-                  className="btn btn-outline-secondary"
+                  variant="outline"
                   onClick={() => {
                     setForm(blankPenghuni());
                     setErrors({});
                   }}
                 >
                   Reset
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={saving || kamarKosongList.length === 0}>
+                </Button>
+                <Button type="submit" disabled={saving || kamarKosongList.length === 0}>
                   {saving ? 'Menyimpan...' : 'Daftarkan Penghuni'}
-                </button>
+                </Button>
               </div>
             </form>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Row 3: CardGroup IconWidgets */}
-      <div className="card-group mb-3">
+      {/* Baris 3: aksi cepat */}
+      <div className="grid gap-4 sm:grid-cols-3">
         <IconWidget
           Icon={Building2}
           title="Tambah Kamar Baru"
@@ -376,119 +375,107 @@ export default function Dashboard({ go, notify }: Props) {
         />
       </div>
 
-      {/* Row 4: Tabel Penghuni & Kamar Terisi (Live dari BE) + Distribusi Okupansi per Tipe Kamar */}
-      <div className="cr-row cr-row--2 mb-3">
-        <div className="card">
-          <div className="card-header d-flex justify-content-between align-items-center">
-            <span>Daftar Penghuni Aktif & Kamar Terisi ({penghuniList.length})</span>
-            <button type="button" className="btn btn-sm btn-link" onClick={() => go('Penghuni')}>
-              Lihat riwayat lengkap
-            </button>
-          </div>
-          <div className="card-body">
-            <div className="filters mb-3">
-              <input
-                type="search"
-                className="form-control"
-                placeholder="Cari penghuni, nomor kamar, atau no. HP..."
-                aria-label="Cari penghuni"
-                value={searchPenghuni}
-                onChange={(e) => setSearchPenghuni(e.target.value)}
-              />
-            </div>
-            <div className="tablewrap">
-              <table className="table table-hover">
-                <thead>
-                  <tr>
-                    <th>Penghuni</th>
-                    <th>Kamar</th>
-                    <th>Harga Sewa</th>
-                    <th>Tanggal Masuk</th>
-                    <th>Status Kamar</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
+      {/* Baris 4: tabel penghuni & kamar terisi + okupansi per tipe kamar */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="min-w-0 lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Daftar Penghuni Aktif & Kamar Terisi ({penghuniList.length})</CardTitle>
+            <CardAction>
+              <Button size="sm" variant="link" className="px-0" onClick={() => go('Penghuni')}>
+                Lihat riwayat lengkap
+              </Button>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Input
+              type="search"
+              placeholder="Cari penghuni, nomor kamar, atau no. HP..."
+              aria-label="Cari penghuni"
+              value={searchPenghuni}
+              onChange={(e) => setSearchPenghuni(e.target.value)}
+            />
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Penghuni</TableHead>
+                    <TableHead>Kamar</TableHead>
+                    <TableHead>Harga Sewa</TableHead>
+                    <TableHead>Tanggal Masuk</TableHead>
+                    <TableHead />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {penghuniFiltered.length ? (
                     penghuniFiltered.map((p) => (
-                      <tr key={p.id}>
-                        <td>
-                          <div className="font-weight-500">{p.nama}</div>
-                          <div className="text-muted small">{p.no_hp}</div>
-                        </td>
-                        <td>
-                          <strong>{p.kamar_nomor}</strong>
-                          {p.kamar_tipe && <div className="text-muted small">Tipe {p.kamar_tipe}</div>}
-                        </td>
-                        <td>{p.kamar_harga ? rupiah(p.kamar_harga) : '–'}</td>
-                        <td>{tanggal(p.tanggal_masuk)}</td>
-                        <td>
-                          <span className="badge badge-primary">Terisi</span>
-                        </td>
-                        <td>
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-outline-secondary"
-                            onClick={() => catatKeluar(p)}
-                          >
+                      <TableRow key={p.id}>
+                        <TableCell>
+                          <div className="font-medium">{p.nama}</div>
+                          <div className="text-xs text-muted-foreground tabular-nums">{p.no_hp}</div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">{p.kamar_nomor}</div>
+                          {p.kamar_tipe && <div className="text-xs text-muted-foreground">Tipe {p.kamar_tipe}</div>}
+                        </TableCell>
+                        <TableCell className="tabular-nums">{p.kamar_harga ? rupiah(p.kamar_harga) : '–'}</TableCell>
+                        <TableCell>{tanggal(p.tanggal_masuk)}</TableCell>
+                        <TableCell className="text-right">
+                          <Button size="sm" variant="outline" onClick={() => catatKeluar(p)}>
                             Catat Keluar
-                          </button>
-                        </td>
-                      </tr>
+                          </Button>
+                        </TableCell>
+                      </TableRow>
                     ))
                   ) : (
-                    <tr>
-                      <td colSpan={6} className="empty">
+                    <TableRow>
+                      <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
                         Belum ada penghuni yang cocok.
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   )}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
-        <div className="card">
-          <div className="card-header d-flex justify-content-between align-items-center">
-            <span>Okupansi per Tipe Kamar (Real-Time DB)</span>
-            <button type="button" className="btn btn-sm btn-link" onClick={() => go('Kamar')}>
-              Detail
-            </button>
-          </div>
-          <div className="card-body">
-            {tipeStats.map((t, idx) => {
-              const color = idx === 0 ? 'secondary' : idx === 1 ? 'primary' : 'info';
-              return (
-                <div key={t.tipe} className="mb-3">
-                  <div className="d-flex justify-content-between small mb-1">
-                    <strong>Tipe {t.tipe}</strong>
-                    <span className="text-muted">
-                      {t.occ} terisi dari {t.total} kamar ({t.pct}%)
-                    </span>
-                  </div>
-                  <div className="progress" style={{ height: '8px' }}>
-                    <div className={`progress-bar bg-${color}`} style={{ width: `${t.pct}%` }} />
-                  </div>
+        <Card className="h-fit">
+          <CardHeader>
+            <CardTitle>Okupansi per Tipe Kamar</CardTitle>
+            <CardAction>
+              <Button size="sm" variant="link" className="px-0" onClick={() => go('Kamar')}>
+                Detail
+              </Button>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {tipeStats.map((t) => (
+              <div key={t.tipe} className="space-y-1.5">
+                <div className="flex justify-between gap-2 text-sm">
+                  <span className="shrink-0 font-medium">Tipe {t.tipe}</span>
+                  <span className="text-right text-muted-foreground">
+                    {t.occ} terisi dari {t.total} kamar ({t.pct}%)
+                  </span>
                 </div>
-              );
-            })}
-          </div>
-          <div className="list-group list-group-flush">
-            <div className="list-group-item d-flex justify-content-between align-items-center small">
-              <span>Total Kamar Terisi</span>
-              <span className="badge badge-primary">{terisi} kamar</span>
+                <Progress value={t.pct} className="h-1.5" />
+              </div>
+            ))}
+          </CardContent>
+          <CardContent className="space-y-2 border-t pt-4 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Total Kamar Terisi</span>
+              <Badge variant="secondary">{terisi} kamar</Badge>
             </div>
-            <div className="list-group-item d-flex justify-content-between align-items-center small">
-              <span>Total Kamar Kosong</span>
-              <span className="badge badge-success">{kosong} kamar</span>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Total Kamar Kosong</span>
+              <Badge variant="outline">{kosong} kamar</Badge>
             </div>
-            <div className="list-group-item d-flex justify-content-between align-items-center small">
-              <span>Total Sewa Aktif Bulan Ini</span>
-              <strong>{rupiah(pendapatan)}</strong>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Total Sewa Aktif Bulan Ini</span>
+              <span className="font-semibold tabular-nums">{rupiah(pendapatan)}</span>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
 
       {addingKamar && (
@@ -501,7 +488,7 @@ export default function Dashboard({ go, notify }: Props) {
           }}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -532,55 +519,46 @@ function TambahKamarModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
 
   return (
     <Modal title="Tambah Kamar Baru" onClose={onClose}>
-      <form className="form" onSubmit={submit} noValidate>
-        {errors._ && <div className="alert alert-danger">{errors._}</div>}
+      <form className="grid gap-4" onSubmit={submit} noValidate>
+        {errors._ && (
+          <Alert variant="destructive">
+            <AlertDescription>{errors._}</AlertDescription>
+          </Alert>
+        )}
         <Field label="Nomor kamar *" error={errors.nomor}>
-          <input
-            autoFocus
-            className="form-control"
-            value={form.nomor}
-            onChange={set('nomor')}
-            placeholder="mis. Kamar 13"
-            maxLength={20}
-          />
+          <Input autoFocus value={form.nomor} onChange={set('nomor')} placeholder="mis. Kamar 13" maxLength={20} aria-invalid={!!errors.nomor} />
         </Field>
-        <div className="row2">
+        <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Tipe *" error={errors.tipe}>
-            <select className="form-control" value={form.tipe} onChange={set('tipe')}>
+            <select className={selectClass} value={form.tipe} onChange={set('tipe')}>
               {TIPE_LIST.map((t) => (
                 <option key={t}>{t}</option>
               ))}
             </select>
           </Field>
           <Field label="Harga per bulan (Rp) *" error={errors.harga}>
-            <input
+            <Input
               type="number"
-              className="form-control"
               inputMode="numeric"
               min={1}
               step={50000}
               value={form.harga}
               onChange={set('harga')}
               placeholder="1200000"
+              aria-invalid={!!errors.harga}
             />
           </Field>
         </div>
         <Field label="URL foto (opsional)" error={errors.foto_url}>
-          <input
-            type="url"
-            className="form-control"
-            value={form.foto_url}
-            onChange={set('foto_url')}
-            placeholder="https://..."
-          />
+          <Input type="url" value={form.foto_url} onChange={set('foto_url')} placeholder="https://..." />
         </Field>
-        <div className="formactions">
-          <button type="button" className="btn btn-outline-secondary" onClick={onClose}>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onClose}>
             Batal
-          </button>
-          <button type="submit" className="btn btn-primary" disabled={saving}>
+          </Button>
+          <Button type="submit" disabled={saving}>
             {saving ? 'Menyimpan...' : 'Simpan Kamar'}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>
