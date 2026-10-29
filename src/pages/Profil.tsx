@@ -1,9 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-import { MdAdd, MdCheckCircle, MdDelete, MdEdit } from 'react-icons/md';
+import { CheckCircle2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { api, ApiError } from '../api';
 import type { AdminForm, AdminProfile } from '../api';
-import { Field, Modal } from '../components';
+import { initials } from '../app-sidebar';
+import { Field, Modal, selectClass } from '../components';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 const emptyForm: AdminForm = {
   nama: '',
@@ -112,165 +120,182 @@ export default function ProfilPage({ notify, onProfileChanged }: Props) {
   };
 
   return (
-    <div className="cr-row cr-row--2">
-      {/* Kolom Kiri: UserCard gaya react-reduction + Daftar Semua Admin (Read, Activate, Delete, Create) */}
-      <div>
+    <div className="grid gap-4 lg:grid-cols-2">
+      {/* Kolom kiri: kartu profil aktif + daftar semua admin (Read, Activate, Delete, Create) */}
+      <div className="flex min-w-0 flex-col gap-4">
         {selected && (
-          <div className="card mb-3 overflow-hidden">
-            <div className="cr-user-popover__top" style={{ padding: '1.75rem 1.25rem' }}>
-              <img
-                src={selected.avatar_url || '/img/user.jpg'}
-                alt={selected.nama}
-                className="cr-avatar cr-avatar--lg mb-2"
-                style={{ border: '2px solid rgba(255,255,255,0.85)' }}
-              />
-              <h5 className="mb-0 text-white">{selected.nama}</h5>
-              <div className="small">{selected.peran}</div>
-              <div className="small mt-1">{selected.email} · {selected.no_hp}</div>
-            </div>
-            <div className="card-body d-flex justify-content-between align-items-center">
-              <div>
-                <div className="font-weight-500">{selected.nama_kos}</div>
-                <div className="text-muted small">{selected.alamat_kos || 'Alamat belum diisi'}</div>
+          <Card>
+            <CardContent className="flex items-center gap-4">
+              <Avatar className="size-16">
+                <AvatarImage src={selected.avatar_url || undefined} alt={selected.nama} />
+                <AvatarFallback className="text-lg">{initials(selected.nama)}</AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <h2 className="truncate text-lg font-semibold">{selected.nama}</h2>
+                  {selected.aktif ? (
+                    <Badge variant="secondary" className="gap-1">
+                      <CheckCircle2 className="text-emerald-600" /> Profil Aktif
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline">Non-aktif</Badge>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground">{selected.peran}</p>
+                <p className="truncate text-sm text-muted-foreground">
+                  {selected.email} · {selected.no_hp}
+                </p>
               </div>
-              <span className={`badge badge-${selected.aktif ? 'success' : 'secondary'}`}>
-                {selected.aktif ? 'Profil Aktif' : 'Non-aktif'}
-              </span>
-            </div>
-          </div>
+            </CardContent>
+            <CardContent className="border-t pt-4">
+              <div className="font-medium">{selected.nama_kos}</div>
+              <div className="text-sm text-muted-foreground">{selected.alamat_kos || 'Alamat belum diisi'}</div>
+            </CardContent>
+          </Card>
         )}
 
-        <div className="card">
-          <div className="card-header d-flex justify-content-between align-items-center">
-            <span>Daftar Profil Admin ({items.length})</span>
-            <button
-              type="button"
-              className="btn btn-sm btn-primary d-inline-flex align-items-center"
-              onClick={() => setCreating(true)}
-            >
-              <MdAdd size={16} className="mr-1" /> Tambah Admin
-            </button>
-          </div>
-          <div className="tablewrap">
-            <table className="table table-hover">
-              <thead>
-                <tr>
-                  <th>Admin</th>
-                  <th>Peran</th>
-                  <th>Status</th>
-                  <th>Aksi</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((a) => (
-                  <tr key={a.id} className={selected?.id === a.id ? 'bg-light' : ''}>
-                    <td>
-                      <div className="d-flex align-items-center">
-                        <img src={a.avatar_url || '/img/user.jpg'} alt="" className="cr-avatar cr-avatar--sm mr-2" />
-                        <div>
-                          <div className="font-weight-500">{a.nama}</div>
-                          <div className="text-muted small">{a.email}</div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Daftar Profil Admin ({items.length})</CardTitle>
+            <CardAction>
+              <Button size="sm" onClick={() => setCreating(true)}>
+                <Plus /> Tambah Admin
+              </Button>
+            </CardAction>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Admin</TableHead>
+                    <TableHead>Peran</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Aksi</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {items.map((a) => (
+                    <TableRow key={a.id} data-state={selected?.id === a.id ? 'selected' : undefined}>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Avatar className="size-8">
+                            <AvatarImage src={a.avatar_url || undefined} alt="" />
+                            <AvatarFallback className="text-xs">{initials(a.nama)}</AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0">
+                            <div className="truncate font-medium">{a.nama}</div>
+                            <div className="truncate text-xs text-muted-foreground">{a.email}</div>
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td>{a.peran}</td>
-                    <td>
-                      <span className={`badge badge-${a.aktif ? 'success' : 'secondary'}`}>
-                        {a.aktif ? 'Aktif' : 'Cadangan'}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="d-flex align-items-center" style={{ gap: '0.35rem' }}>
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-outline-secondary"
-                          title="Edit profil ini"
-                          onClick={() => pilihEdit(a)}
-                        >
-                          <MdEdit size={15} />
-                        </button>
-                        {!a.aktif && (
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-primary"
-                            title="Gunakan profil ini"
-                            onClick={() => aktifkan(a)}
+                      </TableCell>
+                      <TableCell>{a.peran}</TableCell>
+                      <TableCell>
+                        {a.aktif ? <Badge variant="secondary">Aktif</Badge> : <Badge variant="outline">Cadangan</Badge>}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-8"
+                            title="Edit profil ini"
+                            aria-label="Edit profil ini"
+                            onClick={() => pilihEdit(a)}
                           >
-                            <MdCheckCircle size={15} />
-                          </button>
-                        )}
-                        {items.length > 1 && (
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-outline-danger"
-                            title="Hapus profil"
-                            onClick={() => hapus(a)}
-                          >
-                            <MdDelete size={15} />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                            <Pencil />
+                          </Button>
+                          {!a.aktif && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="size-8"
+                              title="Gunakan profil ini"
+                              aria-label="Gunakan profil ini"
+                              onClick={() => aktifkan(a)}
+                            >
+                              <CheckCircle2 />
+                            </Button>
+                          )}
+                          {items.length > 1 && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="size-8 text-destructive hover:text-destructive"
+                              title="Hapus profil"
+                              aria-label="Hapus profil"
+                              onClick={() => hapus(a)}
+                            >
+                              <Trash2 />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Kolom Kanan: Form Update Profil Admin & Informasi Kos */}
-      <div className="card">
-        <div className="card-header">
-          Edit Profil Admin {selected ? `— ${selected.nama}` : ''}
-        </div>
-        <div className="card-body">
-          <form className="form" onSubmit={submitUpdate} noValidate>
-            {errors._ && <div className="alert alert-danger">{errors._}</div>}
-            <div className="row2">
+      {/* Kolom kanan: form update profil admin & informasi kos */}
+      <Card className="h-fit">
+        <CardHeader>
+          <CardTitle>Edit Profil Admin {selected ? `— ${selected.nama}` : ''}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form className="grid gap-4" onSubmit={submitUpdate} noValidate>
+            {errors._ && (
+              <Alert variant="destructive">
+                <AlertDescription>{errors._}</AlertDescription>
+              </Alert>
+            )}
+            <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Nama Admin *" error={errors.nama}>
-                <input className="form-control" value={form.nama} onChange={set('nama')} placeholder="Gopi" />
+                <Input value={form.nama} onChange={set('nama')} placeholder="Gopi" aria-invalid={!!errors.nama} />
               </Field>
               <Field label="Peran / Jabatan *" error={errors.peran}>
-                <select className="form-control" value={form.peran} onChange={set('peran')}>
+                <select className={selectClass} value={form.peran} onChange={set('peran')}>
                   <option>Pemilik Kos</option>
                   <option>Pengelola Kos</option>
                   <option>Admin Keuangan</option>
                 </select>
               </Field>
             </div>
-            <div className="row2">
+            <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Email *" error={errors.email}>
-                <input type="email" className="form-control" value={form.email} onChange={set('email')} placeholder="gopi@kosgopi.id" />
+                <Input type="email" value={form.email} onChange={set('email')} placeholder="gopi@kosgopi.id" aria-invalid={!!errors.email} />
               </Field>
               <Field label="Nomor HP *" error={errors.no_hp}>
-                <input type="tel" className="form-control" value={form.no_hp} onChange={set('no_hp')} placeholder="081234567800" />
+                <Input type="tel" value={form.no_hp} onChange={set('no_hp')} placeholder="081234567800" aria-invalid={!!errors.no_hp} />
               </Field>
             </div>
-            <div className="row2">
+            <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Nama Kos *" error={errors.nama_kos}>
-                <input className="form-control" value={form.nama_kos} onChange={set('nama_kos')} placeholder="Kos Gopi" />
+                <Input value={form.nama_kos} onChange={set('nama_kos')} placeholder="Kos Gopi" aria-invalid={!!errors.nama_kos} />
               </Field>
               <Field label="URL Foto Avatar" error={errors.avatar_url}>
-                <input className="form-control" value={form.avatar_url} onChange={set('avatar_url')} placeholder="/img/user.jpg" />
+                <Input value={form.avatar_url} onChange={set('avatar_url')} placeholder="/img/user.jpg" />
               </Field>
             </div>
             <Field label="Alamat Kos" error={errors.alamat_kos}>
-              <input className="form-control" value={form.alamat_kos} onChange={set('alamat_kos')} placeholder="Jl. Veteran No. 12, Malang" />
+              <Input value={form.alamat_kos} onChange={set('alamat_kos')} placeholder="Jl. Veteran No. 12, Malang" />
             </Field>
-            <div className="formactions">
+            <div className="flex flex-wrap justify-end gap-2">
               {selected && !selected.aktif && (
-                <button type="button" className="btn btn-outline-secondary" onClick={() => aktifkan(selected)}>
+                <Button type="button" variant="outline" onClick={() => aktifkan(selected)}>
                   Jadikan Profil Aktif
-                </button>
+                </Button>
               )}
-              <button type="submit" className="btn btn-primary" disabled={saving}>
+              <Button type="submit" disabled={saving}>
                 {saving ? 'Menyimpan...' : 'Simpan Perubahan'}
-              </button>
+              </Button>
             </div>
           </form>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {creating && (
         <TambahAdminModal
@@ -309,49 +334,54 @@ function TambahAdminModal({ onClose, onCreated }: { onClose: () => void; onCreat
 
   return (
     <Modal title="Tambah Profil Admin Baru" onClose={onClose}>
-      <form className="form" onSubmit={submit} noValidate>
-        {errors._ && <div className="alert alert-danger">{errors._}</div>}
+      <form className="grid gap-4" onSubmit={submit} noValidate>
+        {errors._ && (
+          <Alert variant="destructive">
+            <AlertDescription>{errors._}</AlertDescription>
+          </Alert>
+        )}
         <Field label="Nama Admin *" error={errors.nama}>
-          <input autoFocus className="form-control" value={form.nama} onChange={set('nama')} placeholder="mis. Hasan Huzaifi" />
+          <Input autoFocus value={form.nama} onChange={set('nama')} placeholder="mis. Hasan Huzaifi" aria-invalid={!!errors.nama} />
         </Field>
-        <div className="row2">
+        <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Peran *" error={errors.peran}>
-            <select className="form-control" value={form.peran} onChange={set('peran')}>
+            <select className={selectClass} value={form.peran} onChange={set('peran')}>
               <option>Pemilik Kos</option>
               <option>Pengelola Kos</option>
               <option>Admin Keuangan</option>
             </select>
           </Field>
           <Field label="Nomor HP *" error={errors.no_hp}>
-            <input type="tel" className="form-control" value={form.no_hp} onChange={set('no_hp')} placeholder="081234567899" />
+            <Input type="tel" value={form.no_hp} onChange={set('no_hp')} placeholder="081234567899" aria-invalid={!!errors.no_hp} />
           </Field>
         </div>
         <Field label="Email *" error={errors.email}>
-          <input type="email" className="form-control" value={form.email} onChange={set('email')} placeholder="admin@kosgopi.id" />
+          <Input type="email" value={form.email} onChange={set('email')} placeholder="admin@kosgopi.id" aria-invalid={!!errors.email} />
         </Field>
-        <div className="row2">
+        <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Nama Kos *" error={errors.nama_kos}>
-            <input className="form-control" value={form.nama_kos} onChange={set('nama_kos')} />
+            <Input value={form.nama_kos} onChange={set('nama_kos')} aria-invalid={!!errors.nama_kos} />
           </Field>
           <Field label="Alamat Kos" error={errors.alamat_kos}>
-            <input className="form-control" value={form.alamat_kos} onChange={set('alamat_kos')} placeholder="Malang" />
+            <Input value={form.alamat_kos} onChange={set('alamat_kos')} placeholder="Malang" />
           </Field>
         </div>
-        <label className="check">
+        <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
+            className="size-4 accent-primary"
             checked={Boolean(form.aktif)}
             onChange={(e) => setForm({ ...form, aktif: e.target.checked })}
-          />{' '}
+          />
           Langsung jadikan profil aktif
         </label>
-        <div className="formactions">
-          <button type="button" className="btn btn-outline-secondary" onClick={onClose}>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onClose}>
             Batal
-          </button>
-          <button type="submit" className="btn btn-primary" disabled={saving}>
+          </Button>
+          <Button type="submit" disabled={saving}>
             {saving ? 'Menyimpan...' : 'Tambah Admin'}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>
