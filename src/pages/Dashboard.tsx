@@ -188,7 +188,7 @@ export default function Dashboard({ go, notify }: Props) {
           <CardHeader>
             <CardTitle>Katalog & Status Kamar</CardTitle>
             <CardDescription>
-              {katalogFiltered.length} tampil · {kosong} kosong · {terisi} terisi
+              ({katalogFiltered.length} tampil · {kosong} kosong · {terisi} terisi)
             </CardDescription>
             <CardAction className="flex gap-2 max-sm:col-start-1 max-sm:row-span-1 max-sm:row-start-3 max-sm:justify-self-start">
               <Button size="sm" onClick={() => setAddingKamar(true)}>
@@ -441,7 +441,7 @@ export default function Dashboard({ go, notify }: Props) {
 
         <Card className="h-fit">
           <CardHeader>
-            <CardTitle>Okupansi per Tipe Kamar</CardTitle>
+            <CardTitle>Okupansi per Tipe Kamar (Real-Time DB)</CardTitle>
             <CardAction>
               <Button size="sm" variant="link" className="px-0" onClick={() => go('Kamar')}>
                 Detail

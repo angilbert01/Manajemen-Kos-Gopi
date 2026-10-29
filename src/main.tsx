@@ -73,7 +73,7 @@ function App() {
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Cari..."
+              placeholder="Search..."
               aria-label="Cari"
               className="h-9 pl-8"
               onFocus={() => {
@@ -93,7 +93,7 @@ function App() {
           </Button>
         </header>
 
-        <main className="flex flex-1 flex-col gap-4 p-4 md:p-6">
+        <div className="flex flex-1 flex-col gap-4 p-4 md:p-6">
           <div className="space-y-1">
             <h1 className="text-2xl font-semibold tracking-tight">{page}</h1>
             <Breadcrumb>
@@ -135,7 +135,7 @@ function App() {
               </CardContent>
             </Card>
           )}
-        </main>
+        </div>
       </SidebarInset>
       <Toaster />
     </SidebarProvider>
