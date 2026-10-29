@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Bell, Search } from 'lucide-react';
 import { toast } from 'sonner';
@@ -20,11 +20,14 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Toaster } from '@/components/ui/sonner';
-import Dashboard from './pages/Dashboard';
 import KamarPage from './pages/Kamar';
 import PenghuniPage from './pages/Penghuni';
 import ProfilPage from './pages/Profil';
+
+// Dashboard (berisi Recharts) dimuat terpisah agar halaman lain tidak ikut menanggung bobot grafik.
+const Dashboard = lazy(() => import('./pages/Dashboard'));
 
 const READY = new Set(['Dashboard', 'Kamar', 'Penghuni', 'Profil Admin']);
 
@@ -93,7 +96,10 @@ function App() {
           </Button>
         </header>
 
-        <div className="flex flex-1 flex-col gap-4 p-4 md:p-6">
+        <div
+          key={nav.n}
+          className="flex flex-1 flex-col gap-4 p-4 fill-mode-both md:p-6 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300"
+        >
           <div className="space-y-1">
             <h1 className="text-2xl font-semibold tracking-tight">{page}</h1>
             <Breadcrumb>
@@ -117,7 +123,11 @@ function App() {
             </Breadcrumb>
           </div>
 
-          {page === 'Dashboard' && <Dashboard key={nav.n} go={go} notify={notify} />}
+          {page === 'Dashboard' && (
+            <Suspense fallback={<Skeleton className="h-96 rounded-xl" />}>
+              <Dashboard key={nav.n} go={go} notify={notify} />
+            </Suspense>
+          )}
           {page === 'Kamar' && (
             <KamarPage
               key={nav.n}

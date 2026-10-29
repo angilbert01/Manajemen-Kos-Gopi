@@ -6,38 +6,45 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
+import { useCountUp, useTilt } from '@/lib/motion';
 import { cn } from '@/lib/utils';
 
 /** Kelas <select> native yang meniru tampilan Input shadcn (value "" tetap didukung, picker native di HP). */
 export const selectClass =
   'border-input h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive';
 
+/** Kartu statistik. `value` angka akan beranimasi naik (count-up) lalu ditampilkan lewat `format`. */
 export function Stat({
   title,
   value,
+  format = (n) => n,
   hint,
   progress = 75,
   progressLabel,
 }: {
   title: string;
   value: ReactNode;
+  format?: (n: number) => ReactNode;
   hint: ReactNode;
   progress?: number;
   progressLabel?: ReactNode;
 }) {
   const pct = Number.isFinite(progress) ? Math.max(0, Math.min(100, Math.round(progress))) : 0;
+  const shownPct = Math.round(useCountUp(pct));
+  const counted = Math.round(useCountUp(typeof value === 'number' ? value : 0));
+  const tilt = useTilt<HTMLDivElement>();
   return (
-    <Card className="gap-3 py-5">
+    <Card {...tilt} className="tilt gap-3 py-5">
       <CardContent className="space-y-3 px-5">
         <p className="text-sm font-medium text-muted-foreground">{title}</p>
         <div>
-          <div className="text-2xl font-semibold tracking-tight">{value}</div>
+          <div className="text-2xl font-semibold tracking-tight tabular-nums">{typeof value === 'number' ? format(counted) : value}</div>
           <p className="text-xs text-muted-foreground">{hint}</p>
         </div>
-        <Progress value={pct} className="h-1.5" />
+        <Progress value={shownPct} className="h-1.5" />
         <div className="flex justify-between text-xs text-muted-foreground">
           <span>{progressLabel ?? 'Bulan ini'}</span>
-          <span>{pct}%</span>
+          <span className="tabular-nums">{shownPct}%</span>
         </div>
       </CardContent>
     </Card>
@@ -55,6 +62,8 @@ export function IconWidget({
   subtitle: ReactNode;
   onClick?: () => void;
 }) {
+  const tiltButton = useTilt<HTMLButtonElement>();
+  const tiltDiv = useTilt<HTMLDivElement>();
   const body = (
     <>
       <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted">
@@ -66,17 +75,18 @@ export function IconWidget({
       </span>
     </>
   );
-  const cls = 'flex w-full items-center gap-4 rounded-xl border bg-card p-4 text-left shadow-sm';
+  const cls = 'tilt flex w-full items-center gap-4 rounded-xl border bg-card p-4 text-left shadow-sm';
   return onClick ? (
     <button
       type="button"
+      {...tiltButton}
       onClick={onClick}
-      className={cn(cls, 'transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50')}
+      className={cn(cls, 'hover:bg-accent active:scale-[0.99] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50')}
     >
       {body}
     </button>
   ) : (
-    <div className={cls}>{body}</div>
+    <div {...tiltDiv} className={cls}>{body}</div>
   );
 }
 

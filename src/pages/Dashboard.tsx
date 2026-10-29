@@ -9,8 +9,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Progress } from '@/components/ui/progress';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { HunianMeter, OkupansiTipeChart, SewaMeter, TrenMasukChart } from '../dashboard-charts';
+import { enterClass, stagger } from '@/lib/motion';
+import { trenMasuk } from '@/lib/tren';
 import { cn } from '@/lib/utils';
 
 const PHONE_RE = /^(\+62|62|0)8\d{7,12}$/;
@@ -29,6 +31,8 @@ export default function Dashboard({ go, notify }: Props) {
   const [r, setR] = useState<Ringkasan | null>(null);
   const [kamarList, setKamarList] = useState<Kamar[]>([]);
   const [penghuniList, setPenghuniList] = useState<Penghuni[]>([]);
+  // Termasuk penghuni yang sudah keluar, hanya untuk grafik tren masuk.
+  const [riwayatPenghuni, setRiwayatPenghuni] = useState<Penghuni[]>([]);
   const [apiError, setApiError] = useState('');
 
   // Filter katalog kamar (WBS 1.2)
@@ -49,11 +53,13 @@ export default function Dashboard({ go, notify }: Props) {
 
   const loadAll = useCallback(async () => {
     try {
-      const [ringkasan, kamars, penghunis] = await Promise.all([
+      const [ringkasan, kamars, penghunis, riwayat] = await Promise.all([
         api.ringkasan(),
         api.kamar.list(),
         api.penghuni.list(false),
+        api.penghuni.list(true),
       ]);
+      setRiwayatPenghuni(riwayat);
       setR(ringkasan);
       setKamarList(kamars);
       setPenghuniList(penghunis);
@@ -161,7 +167,8 @@ export default function Dashboard({ go, notify }: Props) {
         />
         <Stat
           title="Kamar Terisi"
-          value={r ? `${terisi} / ${totalKamar}` : '–'}
+          value={r ? terisi : '–'}
+          format={(n) => `${n} / ${totalKamar}`}
           hint={`${r?.total_penghuni ?? 0} penghuni aktif`}
           progress={occPct}
           progressLabel="Tingkat hunian"
@@ -175,17 +182,40 @@ export default function Dashboard({ go, notify }: Props) {
         />
         <Stat
           title="Sewa Aktif / Bln"
-          value={r ? rupiah(pendapatan) : '–'}
+          value={r ? pendapatan : '–'}
+          format={rupiah}
           hint={`Dari potensi ${rupiah(potensi)}`}
           progress={revPct}
           progressLabel="Realisasi sewa"
         />
       </div>
 
+      {/* Grafik: tingkat hunian + tren penghuni masuk 6 bulan */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardTitle>Tingkat Hunian</CardTitle>
+            <CardDescription>Kamar terisi dibanding total kamar</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <HunianMeter terisi={terisi} total={totalKamar} />
+          </CardContent>
+        </Card>
+        <Card className="min-w-0 lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Tren Penghuni Masuk</CardTitle>
+            <CardDescription>Jumlah penghuni baru per bulan, 6 bulan terakhir</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <TrenMasukChart data={trenMasuk(riwayatPenghuni, new Date())} />
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Baris 2: katalog kamar (WBS 1.2) + form registrasi penghuni (WBS 1.3) */}
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="min-w-0 lg:col-span-2">
-          <CardHeader>
+          <CardHeader className="max-sm:has-data-[slot=card-action]:grid-cols-1">
             <CardTitle>Katalog & Status Kamar</CardTitle>
             <CardDescription>
               ({katalogFiltered.length} tampil · {kosong} kosong · {terisi} terisi)
@@ -236,12 +266,17 @@ export default function Dashboard({ go, notify }: Props) {
               <p className="py-10 text-center text-sm text-muted-foreground">Tidak ada kamar yang cocok dengan filter.</p>
             ) : (
               <div className="grid max-h-[28rem] gap-3 overflow-y-auto pr-1 sm:grid-cols-2 xl:grid-cols-3">
-                {katalogFiltered.map((k) => {
+                {katalogFiltered.map((k, i) => {
                   const isSelected = Number(form.kamar_id) === k.id;
                   return (
                     <div
                       key={k.id}
-                      className={cn('flex flex-col overflow-hidden rounded-lg border', isSelected && 'ring-2 ring-primary')}
+                      style={stagger(i)}
+                      className={cn(
+                        'flex flex-col overflow-hidden rounded-lg border transition-[translate,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md',
+                        enterClass,
+                        isSelected && 'ring-2 ring-primary',
+                      )}
                     >
                       <div className="flex aspect-[16/9] items-center justify-center bg-muted text-muted-foreground">
                         {k.foto_url ? (
@@ -449,17 +484,7 @@ export default function Dashboard({ go, notify }: Props) {
             </CardAction>
           </CardHeader>
           <CardContent className="space-y-4">
-            {tipeStats.map((t) => (
-              <div key={t.tipe} className="space-y-1.5">
-                <div className="flex justify-between gap-2 text-sm">
-                  <span className="shrink-0 font-medium">Tipe {t.tipe}</span>
-                  <span className="text-right text-muted-foreground">
-                    {t.occ} terisi dari {t.total} kamar ({t.pct}%)
-                  </span>
-                </div>
-                <Progress value={t.pct} className="h-1.5" />
-              </div>
-            ))}
+            <OkupansiTipeChart stats={tipeStats} />
           </CardContent>
           <CardContent className="space-y-2 border-t pt-4 text-sm">
             <div className="flex items-center justify-between">
@@ -470,10 +495,9 @@ export default function Dashboard({ go, notify }: Props) {
               <span className="text-muted-foreground">Total Kamar Kosong</span>
               <Badge variant="outline">{kosong} kamar</Badge>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Total Sewa Aktif Bulan Ini</span>
-              <span className="font-semibold tabular-nums">{rupiah(pendapatan)}</span>
-            </div>
+          </CardContent>
+          <CardContent className="border-t pt-4">
+            <SewaMeter aktif={pendapatan} potensi={potensi} />
           </CardContent>
         </Card>
       </div>

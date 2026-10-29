@@ -8,6 +8,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { enterClass, stagger } from '@/lib/motion';
+import { cn } from '@/lib/utils';
 
 // EP-01 US-02 (WBS 1.2): katalog & status kamar + kelola data kamar (EP-01 US-01).
 
@@ -112,8 +114,12 @@ export default function KamarPage({ notify, autoOpen = false, onDaftarkan }: Pro
         </Card>
       ) : (
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {items.map((k) => (
-            <Card key={k.id} className="gap-0 overflow-hidden py-0">
+          {items.map((k, i) => (
+            <Card
+              key={k.id}
+              style={stagger(i)}
+              className={cn('gap-0 overflow-hidden py-0 transition-[translate,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md', enterClass)}
+            >
               <div className="flex aspect-video items-center justify-center bg-muted text-muted-foreground">
                 {k.foto_url ? (
                   <img src={k.foto_url} alt={`Foto ${k.nomor}`} loading="lazy" className="size-full object-cover" />
