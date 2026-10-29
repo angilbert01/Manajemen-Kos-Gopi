@@ -1,33 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-import {
-  MdAdd,
-  MdBusiness,
-  MdChat,
-  MdCheckCircle,
-  MdDelete,
-  MdHistory,
-  MdHotel,
-  MdPersonAdd,
-  MdReceipt,
-  MdRefresh,
-  MdUndo,
-  MdViewModule,
-  MdWarning,
-} from 'react-icons/md';
-import { api, ApiError, namaBulan, rupiah, tanggal, today } from '../api';
-import type {
-  AdminProfile,
-  Kamar,
-  KamarForm,
-  Pembayaran,
-  Penghuni,
-  PenghuniForm,
-  RekapTagihan,
-  Ringkasan,
-  Tagihan,
-} from '../api';
-import { Field, IconWidget, Modal, Stat, StatusPill } from '../components';
+import { BedDouble, Building2, LayoutGrid, Plus, UserPlus } from 'lucide-react';
+import { api, ApiError, rupiah, tanggal, today } from '../api';
+import type { Kamar, KamarForm, Penghuni, PenghuniForm, Ringkasan } from '../api';
+import { Field, IconWidget, Modal, Stat, StatusPill, selectClass } from '../components';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { HunianMeter, OkupansiTipeChart, SewaMeter, TrenMasukChart } from '../dashboard-charts';
+import { enterClass, stagger } from '@/lib/motion';
+import { trenMasuk } from '@/lib/tren';
+import { cn } from '@/lib/utils';
 
 const PHONE_RE = /^(\+62|62|0)8\d{7,12}$/;
 const TIPE_LIST = ['Standar', 'AC', 'VIP'];
@@ -39,31 +25,15 @@ const blankPenghuni = (kamarId?: number): PenghuniForm => ({
 });
 const emptyKamar: KamarForm = { nomor: '', tipe: 'Standar', harga: '', foto_url: '' };
 
-const METODE_LIST = [
-  'Tunai',
-  'Transfer BCA',
-  'Transfer Mandiri',
-  'Transfer BRI',
-  'Transfer BNI',
-  'QRIS',
-  'Lainnya',
-];
-
 type Props = { go: (page: string, action?: 'tambah', kamarId?: number) => void; notify: (m: string) => void };
 
 export default function Dashboard({ go, notify }: Props) {
   const [r, setR] = useState<Ringkasan | null>(null);
   const [kamarList, setKamarList] = useState<Kamar[]>([]);
   const [penghuniList, setPenghuniList] = useState<Penghuni[]>([]);
-  const [admin, setAdmin] = useState<AdminProfile | null>(null);
+  // Termasuk penghuni yang sudah keluar, hanya untuk grafik tren masuk.
+  const [riwayatPenghuni, setRiwayatPenghuni] = useState<Penghuni[]>([]);
   const [apiError, setApiError] = useState('');
-
-  // Sprint 3 & Request Klien: Rekap Tagihan Bulanan & Cicilan (WBS 2.2 & 2.3)
-  const [rekapTagihan, setRekapTagihan] = useState<RekapTagihan | null>(null);
-  const [selectedTagihanBulan, setSelectedTagihanBulan] = useState(() => today().slice(0, 7));
-  const [tagihanTab, setTagihanTab] = useState<'belum' | 'dicicil' | 'lunas' | 'semua'>('belum');
-  const [generatingTagihan, setGeneratingTagihan] = useState(false);
-  const [confirmLunasModal, setConfirmLunasModal] = useState<Tagihan | null>(null);
 
   // Filter katalog kamar (WBS 1.2)
   const [filterStatus, setFilterStatus] = useState<'' | 'Kosong' | 'Terisi'>('');
@@ -83,23 +53,21 @@ export default function Dashboard({ go, notify }: Props) {
 
   const loadAll = useCallback(async () => {
     try {
-      const [ringkasan, kamars, penghunis, rekap, adminData] = await Promise.all([
+      const [ringkasan, kamars, penghunis, riwayat] = await Promise.all([
         api.ringkasan(),
         api.kamar.list(),
         api.penghuni.list(false),
-        api.tagihan.rekap(selectedTagihanBulan).catch(() => null),
-        api.admin.aktif().catch(() => null),
+        api.penghuni.list(true),
       ]);
+      setRiwayatPenghuni(riwayat);
       setR(ringkasan);
       setKamarList(kamars);
       setPenghuniList(penghunis);
-      if (rekap) setRekapTagihan(rekap);
-      if (adminData) setAdmin(adminData);
       setApiError('');
     } catch (e) {
       setApiError((e as Error).message);
     }
-  }, [selectedTagihanBulan]);
+  }, []);
 
   useEffect(() => {
     loadAll();
@@ -180,81 +148,28 @@ export default function Dashboard({ go, notify }: Props) {
     `${p.nama} ${p.kamar_nomor} ${p.no_hp}`.toLowerCase().includes(searchPenghuni.toLowerCase()),
   );
 
-  // WBS 2.1: Generate tagihan bulanan
-  const handleGenerateTagihan = async () => {
-    setGeneratingTagihan(true);
-    try {
-      const res = await api.tagihan.generate(selectedTagihanBulan);
-      if (res.dibuat > 0) {
-        notify(`Berhasil membuat ${res.dibuat} tagihan untuk ${namaBulan(selectedTagihanBulan)}.`);
-      } else {
-        notify(`Semua penghuni aktif (${res.total_penghuni_aktif}) sudah memiliki tagihan.`);
-      }
-      await loadAll();
-    } catch (e) {
-      notify((e as Error).message);
-    } finally {
-      setGeneratingTagihan(false);
-    }
-  };
-
-  // WBS 2.3: Batal status lunas
-  const handleBatalLunas = async (t: Tagihan) => {
-    if (!window.confirm(`Batalkan status lunas untuk ${t.penghuni_nama} (${t.kamar_nomor})?`)) return;
-    try {
-      await api.tagihan.batal(t.id);
-      notify(`Status tagihan ${t.penghuni_nama} dikembalikan menjadi "Belum Lunas".`);
-      await loadAll();
-    } catch (e) {
-      notify((e as Error).message);
-    }
-  };
-
-  const kirimPengingatWa = (t: Tagihan) => {
-    let cleanPhone = t.penghuni_no_hp.replace(/\D/g, '');
-    if (cleanPhone.startsWith('0')) cleanPhone = `62${cleanPhone.slice(1)}`;
-    const kosName = admin?.nama_kos || 'Kos Gopi';
-    const pesan =
-      t.status_bayar === 'Dicicil'
-        ? `Halo Kak ${t.penghuni_nama}, kami dari manajemen ${kosName} menginformasikan sisa tagihan sewa kamar ${t.kamar_nomor} (${t.kamar_tipe}) periode ${namaBulan(t.bulan)} sebesar ${rupiah(t.sisa)} (dari total ${rupiah(t.nominal)}, sudah terbayar ${rupiah(t.terbayar)}) jatuh tempo pada ${tanggal(t.jatuh_tempo)}. Terima kasih! 🙏`
-        : `Halo Kak ${t.penghuni_nama}, kami dari manajemen ${kosName} menginformasikan tagihan sewa kamar ${t.kamar_nomor} (${t.kamar_tipe}) untuk periode ${namaBulan(t.bulan)} sebesar ${rupiah(t.nominal)} jatuh tempo pada ${tanggal(t.jatuh_tempo)}. Terima kasih! 🙏`;
-    const text = encodeURIComponent(pesan);
-    window.open(`https://api.whatsapp.com/send?phone=${cleanPhone}&text=${text}`, '_blank');
-  };
-
-  const daftarTagihanTampil =
-    tagihanTab === 'belum'
-      ? rekapTagihan?.daftar_belum_lunas ?? []
-      : tagihanTab === 'dicicil'
-      ? (rekapTagihan?.daftar_belum_lunas ?? []).filter((t) => t.status_bayar === 'Dicicil')
-      : tagihanTab === 'lunas'
-      ? rekapTagihan?.daftar_lunas ?? []
-      : [...(rekapTagihan?.daftar_belum_lunas ?? []), ...(rekapTagihan?.daftar_lunas ?? [])];
-
-  const totalTagihanNominal = rekapTagihan?.total_nominal ?? 0;
-  const lunasNominal = rekapTagihan?.nominal_lunas ?? 0;
-  const belumNominal = rekapTagihan?.nominal_belum_lunas ?? 0;
-  const pctTagihanLunas = totalTagihanNominal > 0 ? Math.round((lunasNominal / totalTagihanNominal) * 100) : 0;
-
   return (
-    <div className="DashboardPage">
-      {apiError && <div className="alert alert-danger mb-3">{apiError}</div>}
+    <>
+      {apiError && (
+        <Alert variant="destructive">
+          <AlertDescription>{apiError}</AlertDescription>
+        </Alert>
+      )}
 
-      {/* Row 1: 4 NumberWidgets 100% Real-Time dari Backend Database */}
-      <div className="cr-row cr-row--4 mb-3">
+      {/* Baris 1: ringkasan real-time dari backend */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
           title="Total Kamar"
           value={r ? totalKamar : '–'}
           hint="Terdaftar di database"
-          color="primary"
           progress={100}
           progressLabel="Kapasitas kos"
         />
         <Stat
           title="Kamar Terisi"
-          value={r ? `${terisi} / ${totalKamar}` : '–'}
+          value={r ? terisi : '–'}
+          format={(n) => `${n} / ${totalKamar}`}
           hint={`${r?.total_penghuni ?? 0} penghuni aktif`}
-          color="secondary"
           progress={occPct}
           progressLabel="Tingkat hunian"
         />
@@ -262,313 +177,63 @@ export default function Dashboard({ go, notify }: Props) {
           title="Kamar Kosong"
           value={r ? kosong : '–'}
           hint="Siap dihuni"
-          color="success"
           progress={kosongPct}
           progressLabel="Ketersediaan"
         />
         <Stat
           title="Sewa Aktif / Bln"
-          value={r ? rupiah(pendapatan) : '–'}
+          value={r ? pendapatan : '–'}
+          format={rupiah}
           hint={`Dari potensi ${rupiah(potensi)}`}
-          color="info"
           progress={revPct}
           progressLabel="Realisasi sewa"
         />
       </div>
 
-      {/* Row: Sprint 3 Deliverable (WBS 2.2 & 2.3) — Dashboard Rekap Tagihan Bulanan (Optimal untuk Layar HP) */}
-      <div className="card mb-3 dashboard-rekap-box">
-        <div className="card-header d-flex flex-wrap justify-content-between align-items-center" style={{ gap: '0.6rem' }}>
-          <div>
-            <strong className="d-flex align-items-center">
-              <MdReceipt className="text-primary mr-1" size={20} />
-              Dashboard Rekap Tagihan Bulanan — {namaBulan(selectedTagihanBulan)}
-            </strong>
-            <small className="text-muted">
-              WBS 2.2 · Tampilan rekap sederhana & mudah dicek lewat HP (Lunas vs Belum Lunas)
-            </small>
-          </div>
-          <div className="d-flex flex-wrap align-items-center" style={{ gap: '0.4rem' }}>
-            <select
-              aria-label="Pilih bulan rekap"
-              className="form-control form-control-sm"
-              value={selectedTagihanBulan}
-              onChange={(e) => setSelectedTagihanBulan(e.target.value)}
-              style={{ width: 'auto', minWidth: '150px' }}
-            >
-              {rekapTagihan?.bulan_tersedia.map((b) => (
-                <option key={b} value={b}>
-                  {namaBulan(b)} {b === today().slice(0, 7) ? '(Bulan Ini)' : ''}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className="btn btn-sm btn-primary d-inline-flex align-items-center"
-              onClick={handleGenerateTagihan}
-              disabled={generatingTagihan}
-              title="Generate otomatis tagihan bulan ini untuk semua kamar terisi"
-            >
-              <MdRefresh size={15} className={`mr-1 ${generatingTagihan ? 'spinner' : ''}`} />
-              {generatingTagihan ? 'Membuat...' : 'Generate Tagihan'}
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm btn-outline-secondary"
-              onClick={() => go('Tagihan')}
-            >
-              Halaman Penuh Tagihan →
-            </button>
-          </div>
-        </div>
-
-        <div className="card-body">
-          {/* 3 Metric Cards Rekap (WBS 2.2) */}
-          <div className="row mb-3">
-            <div className="col-md-4 col-sm-6 mb-2">
-              <div className="p-3 rounded bg-light border">
-                <div className="text-muted small">Total Tagihan Periode Ini</div>
-                <h4 className="mb-0 font-weight-bold text-dark">{rupiah(totalTagihanNominal)}</h4>
-                <div className="text-muted small">{rekapTagihan?.total_tagihan ?? 0} tagihan terbit</div>
-              </div>
-            </div>
-
-            <div className="col-md-4 col-sm-6 mb-2">
-              <div className="p-3 rounded border" style={{ backgroundColor: '#eafaf1', borderColor: '#c3e6cb' }}>
-                <div className="text-success font-weight-500 small">✓ Sudah Terbayar (Lunas)</div>
-                <h4 className="mb-0 font-weight-bold text-success">{rupiah(lunasNominal)}</h4>
-                <div className="d-flex justify-content-between align-items-center small text-muted mt-1">
-                  <span>{rekapTagihan?.total_lunas ?? 0} penghuni lunas</span>
-                  <span className="font-weight-500 text-success">{pctTagihanLunas}%</span>
-                </div>
-                <div className="progress mt-1" style={{ height: '5px' }}>
-                  <div className="progress-bar bg-success" style={{ width: `${pctTagihanLunas}%` }} />
-                </div>
-              </div>
-            </div>
-
-            <div className="col-md-4 col-sm-12 mb-2">
-              <div className="p-3 rounded border" style={{ backgroundColor: '#fff9e6', borderColor: '#ffeeba' }}>
-                <div className="small font-weight-500" style={{ color: '#856404' }}>
-                  ⚠️ Tertunggak (Belum Lunas)
-                </div>
-                <h4 className="mb-0 font-weight-bold" style={{ color: '#856404' }}>
-                  {rupiah(belumNominal)}
-                </h4>
-                <div className="d-flex justify-content-between align-items-center small text-muted mt-1">
-                  <span>{rekapTagihan?.total_belum_lunas ?? 0} perlu ditagih</span>
-                  <span className="font-weight-500" style={{ color: '#856404' }}>
-                    {100 - pctTagihanLunas}%
-                  </span>
-                </div>
-                <div className="progress mt-1" style={{ height: '5px' }}>
-                  <div className="progress-bar bg-warning" style={{ width: `${100 - pctTagihanLunas}%` }} />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Segmented Tab Filter untuk HP (WBS 2.2 + Cicilan) */}
-          <div className="d-flex flex-wrap justify-content-between align-items-center mb-3" style={{ gap: '0.5rem' }}>
-            <div className="btn-group btn-group-sm" role="group" aria-label="Tab daftar tagihan">
-              <button
-                type="button"
-                className={`btn ${tagihanTab === 'belum' ? 'btn-warning text-dark font-weight-bold' : 'btn-outline-secondary'}`}
-                onClick={() => setTagihanTab('belum')}
-              >
-                ⚠️ Belum Lunas ({rekapTagihan?.total_belum_lunas ?? 0})
-              </button>
-              <button
-                type="button"
-                className={`btn ${tagihanTab === 'dicicil' ? 'btn-info text-white font-weight-bold' : 'btn-outline-secondary'}`}
-                onClick={() => setTagihanTab('dicicil')}
-              >
-                ⏳ Dicicil ({rekapTagihan?.total_dicicil ?? 0})
-              </button>
-              <button
-                type="button"
-                className={`btn ${tagihanTab === 'lunas' ? 'btn-success font-weight-bold' : 'btn-outline-secondary'}`}
-                onClick={() => setTagihanTab('lunas')}
-              >
-                ✓ Sudah Lunas ({rekapTagihan?.total_lunas ?? 0})
-              </button>
-              <button
-                type="button"
-                className={`btn ${tagihanTab === 'semua' ? 'btn-primary font-weight-bold' : 'btn-outline-secondary'}`}
-                onClick={() => setTagihanTab('semua')}
-              >
-                Semua ({rekapTagihan?.total_tagihan ?? 0})
-              </button>
-            </div>
-
-            <small className="text-muted">
-              Menampilkan {daftarTagihanTampil.length} data tagihan
-            </small>
-          </div>
-
-          {/* List Kartu Tagihan Sederhana (Responsive untuk Layar HP) */}
-          {daftarTagihanTampil.length === 0 ? (
-            <div className="p-4 text-center text-muted bg-light rounded border">
-              {tagihanTab === 'belum' ? (
-                <>
-                  <MdCheckCircle size={36} className="text-success mb-2" />
-                  <p className="mb-0">Hebat! Semua penghuni sudah melunasi tagihan periode ini.</p>
-                </>
-              ) : tagihanTab === 'dicicil' ? (
-                <p className="mb-0">Belum ada penghuni yang mencicil tagihan di periode ini.</p>
-              ) : (
-                <p className="mb-0">Tidak ada data tagihan pada tab ini.</p>
-              )}
-            </div>
-          ) : (
-            <div className="list-group list-group-flush border rounded">
-              {daftarTagihanTampil.map((t) => {
-                const isLunas = t.status === 'Lunas';
-                const isDicicil = !isLunas && t.status_bayar === 'Dicicil';
-                const isLewat = !isLunas && t.jatuh_tempo < today();
-                return (
-                  <div
-                    key={t.id}
-                    className="list-group-item p-3 d-flex flex-wrap justify-content-between align-items-center"
-                    style={{
-                      backgroundColor: isLunas ? '#fff' : isDicicil ? '#f8faff' : '#fffdfa',
-                      gap: '0.8rem',
-                      borderLeft: `4px solid ${
-                        isLunas ? 'var(--success)' : isDicicil ? 'var(--info)' : isLewat ? 'var(--danger)' : 'var(--warning)'
-                      }`,
-                    }}
-                  >
-                    <div style={{ flex: '1 1 280px', minWidth: '220px' }}>
-                      <div className="d-flex align-items-center flex-wrap" style={{ gap: '0.4rem' }}>
-                        <strong className="text-dark h6 mb-0">{t.kamar_nomor}</strong>
-                        <span className="badge badge-light border">{t.kamar_tipe}</span>
-                        {isLunas ? (
-                          <span className="badge badge-success d-inline-flex align-items-center">
-                            <MdCheckCircle size={12} className="mr-1" /> Lunas
-                          </span>
-                        ) : isDicicil ? (
-                          <span className="badge badge-info text-white d-inline-flex align-items-center">
-                            <MdReceipt size={12} className="mr-1" /> Dicicil ({t.jumlah_pembayaran}x)
-                          </span>
-                        ) : isLewat ? (
-                          <span className="badge badge-danger d-inline-flex align-items-center">
-                            <MdWarning size={12} className="mr-1" /> Lewat Jatuh Tempo
-                          </span>
-                        ) : (
-                          <span className="badge badge-warning text-dark d-inline-flex align-items-center">
-                            <MdWarning size={12} className="mr-1" /> Belum Lunas
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="font-weight-500 mt-1">{t.penghuni_nama}</div>
-                      
-                      {isDicicil && (
-                        <div className="mt-1 small">
-                          <div className="d-flex justify-content-between text-muted" style={{ maxWidth: '240px' }}>
-                            <span>Terbayar: <strong className="text-success">{rupiah(t.terbayar)}</strong></span>
-                            <span>Sisa: <strong className="text-danger">{rupiah(t.sisa)}</strong></span>
-                          </div>
-                          <div className="progress mt-1" style={{ height: '4px', maxWidth: '240px' }}>
-                            <div
-                              className="progress-bar bg-info"
-                              style={{ width: `${Math.round((t.terbayar / t.nominal) * 100)}%` }}
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="small text-muted mt-1">
-                        Jatuh Tempo: <strong>{tanggal(t.jatuh_tempo)}</strong>
-                        {isLunas && t.tanggal_bayar && (
-                          <span className="ml-2 text-success">
-                            · Lunas: {tanggal(t.tanggal_bayar)} ({t.metode_pembayaran || 'Tunai'})
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="d-flex flex-wrap align-items-center" style={{ gap: '0.6rem' }}>
-                      <div className="text-right mr-2">
-                        {isDicicil ? (
-                          <>
-                            <div className="h5 mb-0 font-weight-bold text-danger">{rupiah(t.sisa)}</div>
-                            <small className="text-muted d-block">Sisa dari {rupiah(t.nominal)}</small>
-                          </>
-                        ) : (
-                          <>
-                            <div className="h5 mb-0 font-weight-bold text-dark">{rupiah(t.nominal)}</div>
-                            <small className="text-muted">{namaBulan(t.bulan)}</small>
-                          </>
-                        )}
-                      </div>
-
-                      {!isLunas ? (
-                        <div className="d-inline-flex align-items-center" style={{ gap: '0.35rem' }}>
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-success d-inline-flex align-items-center"
-                            onClick={() => setConfirmLunasModal(t)}
-                            title="Catat pembayaran (bayar penuh atau cicilan)"
-                          >
-                            <MdCheckCircle size={15} className="mr-1" /> {isDicicil ? 'Bayar Cicilan' : 'Bayar / Cicil'}
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-outline-success"
-                            onClick={() => kirimPengingatWa(t)}
-                            title="Kirim pengingat via WhatsApp"
-                          >
-                            <MdChat size={15} /> WA
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center"
-                          onClick={() => handleBatalLunas(t)}
-                          title="Batalkan status lunas (reset pembayaran)"
-                        >
-                          <MdUndo size={14} className="mr-1" /> Batal
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+      {/* Grafik: tingkat hunian + tren penghuni masuk 6 bulan */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardTitle>Tingkat Hunian</CardTitle>
+            <CardDescription>Kamar terisi dibanding total kamar</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <HunianMeter terisi={terisi} total={totalKamar} />
+          </CardContent>
+        </Card>
+        <Card className="min-w-0 lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Tren Penghuni Masuk</CardTitle>
+            <CardDescription>Jumlah penghuni baru per bulan, 6 bulan terakhir</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <TrenMasukChart data={trenMasuk(riwayatPenghuni, new Date())} />
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Row 2: Sprint 2 Deliverables — Katalog Kamar (WBS 1.2) + Form Registrasi Penghuni (WBS 1.3) */}
-      <div className="cr-row cr-row--charts mb-3">
-        {/* WBS 1.2: Tampilan Katalog Kamar dengan Status Terisi / Kosong */}
-        <div className="card">
-          <div className="card-header d-flex justify-content-between align-items-center">
-            <div>
-              <strong>Katalog & Status Kamar</strong>{' '}
-              <small className="text-muted">({katalogFiltered.length} tampil · {kosong} kosong · {terisi} terisi)</small>
-            </div>
-            <div className="d-flex align-items-center" style={{ gap: '0.4rem' }}>
-              <button
-                type="button"
-                className="btn btn-sm btn-primary d-inline-flex align-items-center"
-                onClick={() => setAddingKamar(true)}
-              >
-                <MdAdd size={16} className="mr-1" /> Tambah Kamar
-              </button>
-              <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => go('Kamar')}>
+      {/* Baris 2: katalog kamar (WBS 1.2) + form registrasi penghuni (WBS 1.3) */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="min-w-0 lg:col-span-2">
+          <CardHeader className="max-sm:has-data-[slot=card-action]:grid-cols-1">
+            <CardTitle>Katalog & Status Kamar</CardTitle>
+            <CardDescription>
+              ({katalogFiltered.length} tampil · {kosong} kosong · {terisi} terisi)
+            </CardDescription>
+            <CardAction className="flex gap-2 max-sm:col-start-1 max-sm:row-span-1 max-sm:row-start-3 max-sm:justify-self-start">
+              <Button size="sm" onClick={() => setAddingKamar(true)}>
+                <Plus /> Tambah Kamar
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => go('Kamar')}>
                 Kelola Penuh
-              </button>
-            </div>
-          </div>
-
-          <div className="card-body">
-            <div className="filters mb-3">
-              <input
+              </Button>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Input
                 type="search"
-                className="form-control"
+                className="sm:flex-1"
                 placeholder="Cari nomor, tipe, atau nama penghuni..."
                 aria-label="Cari kamar"
                 value={searchKamar}
@@ -576,7 +241,7 @@ export default function Dashboard({ go, notify }: Props) {
               />
               <select
                 aria-label="Filter status kamar"
-                className="form-control"
+                className={`${selectClass} sm:w-44`}
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value as '' | 'Kosong' | 'Terisi')}
               >
@@ -586,7 +251,7 @@ export default function Dashboard({ go, notify }: Props) {
               </select>
               <select
                 aria-label="Filter harga maksimal"
-                className="form-control"
+                className={`${selectClass} sm:w-40`}
                 value={filterHarga}
                 onChange={(e) => setFilterHarga(e.target.value)}
               >
@@ -598,95 +263,99 @@ export default function Dashboard({ go, notify }: Props) {
             </div>
 
             {katalogFiltered.length === 0 ? (
-              <div className="empty">Tidak ada kamar yang cocok dengan filter.</div>
+              <p className="py-10 text-center text-sm text-muted-foreground">Tidak ada kamar yang cocok dengan filter.</p>
             ) : (
-              <div className="rooms rooms--compact">
-                {katalogFiltered.map((k) => {
+              <div className="grid max-h-[28rem] gap-3 overflow-y-auto pr-1 sm:grid-cols-2 xl:grid-cols-3">
+                {katalogFiltered.map((k, i) => {
                   const isSelected = Number(form.kamar_id) === k.id;
                   return (
-                    <article
+                    <div
                       key={k.id}
-                      className={`card room ${k.status === 'Terisi' ? 'is-occupied' : ''} ${
-                        isSelected ? 'room--selected' : ''
-                      }`}
+                      style={stagger(i)}
+                      className={cn(
+                        'flex flex-col overflow-hidden rounded-lg border transition-[translate,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md',
+                        enterClass,
+                        isSelected && 'ring-2 ring-primary',
+                      )}
                     >
-                      <div className="roomphoto roomphoto--sm">
+                      <div className="flex aspect-[16/9] items-center justify-center bg-muted text-muted-foreground">
                         {k.foto_url ? (
-                          <img src={k.foto_url} alt={k.nomor} loading="lazy" />
+                          <img src={k.foto_url} alt={k.nomor} loading="lazy" className="size-full object-cover" />
                         ) : (
-                          <MdHotel size={30} />
+                          <BedDouble className="size-6" aria-hidden />
                         )}
                       </div>
-                      <div className="card-body roombody">
-                        <div className="d-flex justify-content-between align-items-center">
-                          <strong>{k.nomor}</strong>
+                      <div className="flex flex-1 flex-col gap-1 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate font-medium">{k.nomor}</span>
                           <StatusPill status={k.status} />
                         </div>
-                        <div className="text-muted small">
+                        <p className="text-xs text-muted-foreground">
                           Tipe {k.tipe} · {rupiah(k.harga)}/bln
-                        </div>
+                        </p>
                         {k.status === 'Terisi' ? (
-                          <div className="small mt-1 text-dark">
-                            Penghuni: <strong>{k.penghuni_nama ?? 'Terisi'}</strong>
-                          </div>
+                          <p className="truncate text-sm">
+                            Penghuni: <span className="font-medium">{k.penghuni_nama ?? 'Terisi'}</span>
+                          </p>
                         ) : (
-                          <div className="roomactions">
-                            <button
-                              type="button"
-                              className={`btn btn-sm ${isSelected ? 'btn-outline-secondary' : 'btn-primary'}`}
-                              onClick={() => setForm((f) => ({ ...f, kamar_id: String(k.id) }))}
-                            >
-                              {isSelected ? 'Dipilih di Form ✓' : 'Pilih Kamar Ini'}
-                            </button>
-                          </div>
+                          <Button
+                            size="sm"
+                            variant={isSelected ? 'outline' : 'default'}
+                            className="mt-auto self-start"
+                            onClick={() => setForm((f) => ({ ...f, kamar_id: String(k.id) }))}
+                          >
+                            {isSelected ? 'Dipilih di Form ✓' : 'Pilih Kamar Ini'}
+                          </Button>
                         )}
                       </div>
-                    </article>
+                    </div>
                   );
                 })}
               </div>
             )}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
-        {/* WBS 1.3: Form & API Registrasi Penghuni Baru (Otomatis Ubah Status Kamar -> Terisi) */}
-        <div className="card">
-          <div className="card-header d-flex justify-content-between align-items-center">
-            <strong>Registrasi Penghuni Baru</strong>
-            <span className="badge badge-success">{kamarKosongList.length} kamar kosong</span>
-          </div>
-          <div className="card-body">
-            <p className="text-muted small mb-2">
-              Isi form di bawah atau klik <strong>Pilih Kamar Ini</strong> pada katalog. Setelah disimpan ke API, status
-              kamar otomatis berubah menjadi <strong>Terisi</strong>.
-            </p>
-            <form className="form" onSubmit={submitPenghuni} noValidate>
-              {errors._ && <div className="alert alert-danger">{errors._}</div>}
+        <Card className="h-fit">
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between gap-2">
+              Registrasi Penghuni Baru
+              <Badge variant="outline">{kamarKosongList.length} kamar kosong</Badge>
+            </CardTitle>
+            <CardDescription>
+              Isi form di bawah atau klik <span className="font-medium text-foreground">Pilih Kamar Ini</span> pada katalog.
+              Setelah disimpan ke API, status kamar otomatis berubah menjadi{' '}
+              <span className="font-medium text-foreground">Terisi</span>.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form className="grid gap-4" onSubmit={submitPenghuni} noValidate>
+              {errors._ && (
+                <Alert variant="destructive">
+                  <AlertDescription>{errors._}</AlertDescription>
+                </Alert>
+              )}
               <Field label="Nama lengkap penghuni *" error={errors.nama}>
-                <input
-                  className="form-control"
+                <Input
                   value={form.nama}
                   onChange={setField('nama')}
                   placeholder="mis. Fajar Hidayat"
                   maxLength={100}
+                  aria-invalid={!!errors.nama}
                 />
               </Field>
               <Field label="Nomor HP *" error={errors.no_hp} hint="Format 08xx / 628xx">
-                <input
+                <Input
                   type="tel"
-                  className="form-control"
                   inputMode="tel"
                   value={form.no_hp}
                   onChange={setField('no_hp')}
                   placeholder="081234567890"
+                  aria-invalid={!!errors.no_hp}
                 />
               </Field>
-              <Field
-                label="Pilih kamar *"
-                error={errors.kamar_id}
-                hint="Kamar berstatus Terisi otomatis dikunci"
-              >
-                <select className="form-control" value={form.kamar_id} onChange={setField('kamar_id')}>
+              <Field label="Pilih kamar *" error={errors.kamar_id} hint="Kamar berstatus Terisi otomatis dikunci">
+                <select className={selectClass} value={form.kamar_id} onChange={setField('kamar_id')} aria-invalid={!!errors.kamar_id}>
                   <option value="">-- Pilih kamar kosong --</option>
                   {kamarList.map((k) => (
                     <option key={k.id} value={k.id} disabled={k.status === 'Terisi'}>
@@ -697,171 +366,140 @@ export default function Dashboard({ go, notify }: Props) {
                 </select>
               </Field>
               <Field label="Tanggal mulai sewa *" error={errors.tanggal_masuk}>
-                <input
-                  type="date"
-                  className="form-control"
-                  value={form.tanggal_masuk}
-                  onChange={setField('tanggal_masuk')}
-                />
+                <Input type="date" value={form.tanggal_masuk} onChange={setField('tanggal_masuk')} aria-invalid={!!errors.tanggal_masuk} />
               </Field>
-              <div className="formactions">
-                <button
+              <div className="flex justify-end gap-2">
+                <Button
                   type="button"
-                  className="btn btn-outline-secondary"
+                  variant="outline"
                   onClick={() => {
                     setForm(blankPenghuni());
                     setErrors({});
                   }}
                 >
                   Reset
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={saving || kamarKosongList.length === 0}>
+                </Button>
+                <Button type="submit" disabled={saving || kamarKosongList.length === 0}>
                   {saving ? 'Menyimpan...' : 'Daftarkan Penghuni'}
-                </button>
+                </Button>
               </div>
             </form>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Row 3: CardGroup IconWidgets */}
-      <div className="card-group mb-3">
+      {/* Baris 3: aksi cepat */}
+      <div className="grid gap-4 sm:grid-cols-3">
         <IconWidget
-          bgColor="primary"
-          Icon={MdBusiness}
+          Icon={Building2}
           title="Tambah Kamar Baru"
           subtitle="Tambah unit kamar ke katalog"
           onClick={() => setAddingKamar(true)}
         />
         <IconWidget
-          bgColor="secondary"
-          Icon={MdPersonAdd}
+          Icon={UserPlus}
           title={`${penghuniList.length} Penghuni Aktif`}
           subtitle="Buka halaman kelola penghuni"
           onClick={() => go('Penghuni')}
         />
         <IconWidget
-          bgColor="info"
-          Icon={MdViewModule}
+          Icon={LayoutGrid}
           title={`${kosong} Kamar Tersedia`}
           subtitle="Buka katalog kamar lengkap"
           onClick={() => go('Kamar')}
         />
       </div>
 
-      {/* Row 4: Tabel Penghuni & Kamar Terisi (Live dari BE) + Distribusi Okupansi per Tipe Kamar */}
-      <div className="cr-row cr-row--2 mb-3">
-        <div className="card">
-          <div className="card-header d-flex justify-content-between align-items-center">
-            <span>Daftar Penghuni Aktif & Kamar Terisi ({penghuniList.length})</span>
-            <button type="button" className="btn btn-sm btn-link" onClick={() => go('Penghuni')}>
-              Lihat riwayat lengkap
-            </button>
-          </div>
-          <div className="card-body">
-            <div className="filters mb-3">
-              <input
-                type="search"
-                className="form-control"
-                placeholder="Cari penghuni, nomor kamar, atau no. HP..."
-                aria-label="Cari penghuni"
-                value={searchPenghuni}
-                onChange={(e) => setSearchPenghuni(e.target.value)}
-              />
-            </div>
-            <div className="tablewrap">
-              <table className="table table-hover">
-                <thead>
-                  <tr>
-                    <th>Penghuni</th>
-                    <th>Kamar</th>
-                    <th>Harga Sewa</th>
-                    <th>Tanggal Masuk</th>
-                    <th>Status Kamar</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
+      {/* Baris 4: tabel penghuni & kamar terisi + okupansi per tipe kamar */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="min-w-0 lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Daftar Penghuni Aktif & Kamar Terisi ({penghuniList.length})</CardTitle>
+            <CardAction>
+              <Button size="sm" variant="link" className="px-0" onClick={() => go('Penghuni')}>
+                Lihat riwayat lengkap
+              </Button>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Input
+              type="search"
+              placeholder="Cari penghuni, nomor kamar, atau no. HP..."
+              aria-label="Cari penghuni"
+              value={searchPenghuni}
+              onChange={(e) => setSearchPenghuni(e.target.value)}
+            />
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Penghuni</TableHead>
+                    <TableHead>Kamar</TableHead>
+                    <TableHead>Harga Sewa</TableHead>
+                    <TableHead>Tanggal Masuk</TableHead>
+                    <TableHead />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {penghuniFiltered.length ? (
                     penghuniFiltered.map((p) => (
-                      <tr key={p.id}>
-                        <td>
-                          <div className="font-weight-500">{p.nama}</div>
-                          <div className="text-muted small">{p.no_hp}</div>
-                        </td>
-                        <td>
-                          <strong>{p.kamar_nomor}</strong>
-                          {p.kamar_tipe && <div className="text-muted small">Tipe {p.kamar_tipe}</div>}
-                        </td>
-                        <td>{p.kamar_harga ? rupiah(p.kamar_harga) : '–'}</td>
-                        <td>{tanggal(p.tanggal_masuk)}</td>
-                        <td>
-                          <span className="badge badge-primary">Terisi</span>
-                        </td>
-                        <td>
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-outline-secondary"
-                            onClick={() => catatKeluar(p)}
-                          >
+                      <TableRow key={p.id}>
+                        <TableCell>
+                          <div className="font-medium">{p.nama}</div>
+                          <div className="text-xs text-muted-foreground tabular-nums">{p.no_hp}</div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">{p.kamar_nomor}</div>
+                          {p.kamar_tipe && <div className="text-xs text-muted-foreground">Tipe {p.kamar_tipe}</div>}
+                        </TableCell>
+                        <TableCell className="tabular-nums">{p.kamar_harga ? rupiah(p.kamar_harga) : '–'}</TableCell>
+                        <TableCell>{tanggal(p.tanggal_masuk)}</TableCell>
+                        <TableCell className="text-right">
+                          <Button size="sm" variant="outline" onClick={() => catatKeluar(p)}>
                             Catat Keluar
-                          </button>
-                        </td>
-                      </tr>
+                          </Button>
+                        </TableCell>
+                      </TableRow>
                     ))
                   ) : (
-                    <tr>
-                      <td colSpan={6} className="empty">
+                    <TableRow>
+                      <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
                         Belum ada penghuni yang cocok.
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   )}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
-        <div className="card">
-          <div className="card-header d-flex justify-content-between align-items-center">
-            <span>Okupansi per Tipe Kamar (Real-Time DB)</span>
-            <button type="button" className="btn btn-sm btn-link" onClick={() => go('Kamar')}>
-              Detail
-            </button>
-          </div>
-          <div className="card-body">
-            {tipeStats.map((t, idx) => {
-              const color = idx === 0 ? 'secondary' : idx === 1 ? 'primary' : 'info';
-              return (
-                <div key={t.tipe} className="mb-3">
-                  <div className="d-flex justify-content-between small mb-1">
-                    <strong>Tipe {t.tipe}</strong>
-                    <span className="text-muted">
-                      {t.occ} terisi dari {t.total} kamar ({t.pct}%)
-                    </span>
-                  </div>
-                  <div className="progress" style={{ height: '8px' }}>
-                    <div className={`progress-bar bg-${color}`} style={{ width: `${t.pct}%` }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="list-group list-group-flush">
-            <div className="list-group-item d-flex justify-content-between align-items-center small">
-              <span>Total Kamar Terisi</span>
-              <span className="badge badge-primary">{terisi} kamar</span>
+        <Card className="h-fit">
+          <CardHeader>
+            <CardTitle>Okupansi per Tipe Kamar (Real-Time DB)</CardTitle>
+            <CardAction>
+              <Button size="sm" variant="link" className="px-0" onClick={() => go('Kamar')}>
+                Detail
+              </Button>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <OkupansiTipeChart stats={tipeStats} />
+          </CardContent>
+          <CardContent className="space-y-2 border-t pt-4 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Total Kamar Terisi</span>
+              <Badge variant="secondary">{terisi} kamar</Badge>
             </div>
-            <div className="list-group-item d-flex justify-content-between align-items-center small">
-              <span>Total Kamar Kosong</span>
-              <span className="badge badge-success">{kosong} kamar</span>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Total Kamar Kosong</span>
+              <Badge variant="outline">{kosong} kamar</Badge>
             </div>
-            <div className="list-group-item d-flex justify-content-between align-items-center small">
-              <span>Total Sewa Aktif Bulan Ini</span>
-              <strong>{rupiah(pendapatan)}</strong>
-            </div>
-          </div>
-        </div>
+          </CardContent>
+          <CardContent className="border-t pt-4">
+            <SewaMeter aktif={pendapatan} potensi={potensi} />
+          </CardContent>
+        </Card>
       </div>
 
       {addingKamar && (
@@ -874,272 +512,7 @@ export default function Dashboard({ go, notify }: Props) {
           }}
         />
       )}
-
-      {confirmLunasModal && (
-        <DashboardModalKonfirmasiLunas
-          tagihan={confirmLunasModal}
-          onClose={() => setConfirmLunasModal(null)}
-          onSuccess={async (updated) => {
-            setConfirmLunasModal(null);
-            notify(`Tagihan ${updated.penghuni_nama} (${updated.kamar_nomor}) berhasil ditandai Lunas.`);
-            await loadAll();
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-function DashboardModalKonfirmasiLunas({
-  tagihan,
-  onClose,
-  onSuccess,
-}: {
-  tagihan: Tagihan;
-  onClose: () => void;
-  onSuccess: (t: Tagihan) => void;
-}) {
-  const sisa = tagihan.sisa > 0 ? tagihan.sisa : tagihan.nominal;
-  const [mode, setMode] = useState<'penuh' | 'cicil'>('penuh');
-  const [jumlah, setJumlah] = useState(String(sisa));
-  const [tglBayar, setTglBayar] = useState(today());
-  const [metode, setMetode] = useState('Transfer BCA');
-  const [catatan, setCatatan] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [riwayat, setRiwayat] = useState<Pembayaran[]>([]);
-
-  useEffect(() => {
-    if (tagihan.jumlah_pembayaran > 0) {
-      api.tagihan
-        .pembayaran(tagihan.id)
-        .then((data) => setRiwayat(data))
-        .catch(() => null);
-    }
-  }, [tagihan.id, tagihan.jumlah_pembayaran]);
-
-  const handleSelectMode = (newMode: 'penuh' | 'cicil') => {
-    setMode(newMode);
-    if (newMode === 'penuh') {
-      setJumlah(String(sisa));
-    } else {
-      // Default cicilan: 50% dari sisa atau Rp 500.000 jika memungkinkan
-      const half = Math.round(sisa / 2 / 50000) * 50000;
-      setJumlah(String(half > 0 ? half : sisa));
-    }
-  };
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    const nominalBayar = mode === 'penuh' ? sisa : Number(jumlah);
-    if (!nominalBayar || nominalBayar <= 0) {
-      setError('Jumlah pembayaran harus lebih dari 0.');
-      return;
-    }
-    if (nominalBayar > sisa) {
-      setError(`Jumlah pembayaran melebihi sisa tagihan (${rupiah(sisa)}).`);
-      return;
-    }
-
-    setSaving(true);
-    setError('');
-    try {
-      let updated: Tagihan;
-      if (mode === 'penuh' || nominalBayar >= sisa) {
-        // Gunakan endpoint lunas untuk melunasi sisa tagihan sekaligus
-        updated = await api.tagihan.lunas(tagihan.id, {
-          tanggal_bayar: tglBayar,
-          metode_pembayaran: metode,
-          catatan: catatan.trim() || undefined,
-        });
-      } else {
-        // Gunakan endpoint bayar untuk mencatat pembayaran cicilan
-        updated = await api.tagihan.bayar(tagihan.id, {
-          jumlah: nominalBayar,
-          tanggal_bayar: tglBayar,
-          metode_pembayaran: metode,
-          catatan: catatan.trim() || undefined,
-        });
-      }
-      onSuccess(updated);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleHapusCicilan = async (pembayaranId: number) => {
-    if (!window.confirm('Hapus transaksi pembayaran ini?')) return;
-    try {
-      const updated = await api.tagihan.hapusPembayaran(pembayaranId);
-      setRiwayat((prev) => prev.filter((p) => p.id !== pembayaranId));
-      onSuccess(updated);
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  };
-
-  return (
-    <Modal title={tagihan.status_bayar === 'Dicicil' ? 'Pembayaran Tagihan (Cicilan)' : 'Konfirmasi Pembayaran'} onClose={onClose}>
-      <form onSubmit={submit} className="form">
-        {error && <div className="alert alert-danger">{error}</div>}
-
-        {/* Ringkasan status tagihan */}
-        <div className="card p-3 mb-3 bg-light" style={{ border: '1px solid #e2e8f0' }}>
-          <div className="d-flex justify-content-between mb-1">
-            <span className="text-muted small">Penghuni:</span>
-            <strong>{tagihan.penghuni_nama}</strong>
-          </div>
-          <div className="d-flex justify-content-between mb-1">
-            <span className="text-muted small">Kamar:</span>
-            <span>
-              <strong>{tagihan.kamar_nomor}</strong> ({tagihan.kamar_tipe})
-            </span>
-          </div>
-          <div className="d-flex justify-content-between mb-1">
-            <span className="text-muted small">Periode:</span>
-            <span>{namaBulan(tagihan.bulan)}</span>
-          </div>
-          <div className="d-flex justify-content-between mb-1">
-            <span className="text-muted small">Total Tagihan:</span>
-            <strong className="text-dark">{rupiah(tagihan.nominal)}</strong>
-          </div>
-          {tagihan.terbayar > 0 && (
-            <div className="d-flex justify-content-between mb-1 text-success small">
-              <span>Sudah Terbayar:</span>
-              <strong>{rupiah(tagihan.terbayar)}</strong>
-            </div>
-          )}
-          <div className="d-flex justify-content-between pt-2 mt-2" style={{ borderTop: '1px dashed #cbd5e0' }}>
-            <span className="font-weight-bold text-dark">Sisa yang Harus Dibayar:</span>
-            <strong className="text-danger h5 mb-0">{rupiah(sisa)}</strong>
-          </div>
-        </div>
-
-        {/* Pilihan Mode Pembayaran: Bayar Penuh Langsung vs Cicilan */}
-        <div className="mb-3">
-          <label className="flabel d-block mb-1">Pilihan Pembayaran *</label>
-          <div className="btn-group btn-group-sm w-100" role="group">
-            <button
-              type="button"
-              className={`btn ${mode === 'penuh' ? 'btn-success font-weight-bold' : 'btn-outline-secondary'}`}
-              onClick={() => handleSelectMode('penuh')}
-              style={{ flex: 1 }}
-            >
-              ✓ Bayar Penuh ({rupiah(sisa)})
-            </button>
-            <button
-              type="button"
-              className={`btn ${mode === 'cicil' ? 'btn-primary font-weight-bold' : 'btn-outline-secondary'}`}
-              onClick={() => handleSelectMode('cicil')}
-              style={{ flex: 1 }}
-            >
-              ⏳ Cicil / Bayar Sebagian
-            </button>
-          </div>
-        </div>
-
-        {/* Input Jumlah Bayar jika mode cicilan */}
-        {mode === 'cicil' && (
-          <Field label={`Jumlah Pembayaran Cicilan (Maks. ${rupiah(sisa)}) *`}>
-            <input
-              type="number"
-              className="form-control"
-              min={10000}
-              max={sisa}
-              step={50000}
-              value={jumlah}
-              onChange={(e) => setJumlah(e.target.value)}
-              placeholder="mis. 500000"
-              required
-            />
-            <small className="text-muted mt-1 d-block">
-              Penghuni dapat membayar sebagian terlebih dahulu. Status tagihan akan menjadi "Dicicil".
-            </small>
-          </Field>
-        )}
-
-        <div className="row2">
-          <Field label="Tanggal Bayar *">
-            <input
-              type="date"
-              className="form-control"
-              value={tglBayar}
-              onChange={(e) => setTglBayar(e.target.value)}
-              required
-            />
-          </Field>
-
-          <Field label="Metode Pembayaran *">
-            <select className="form-control" value={metode} onChange={(e) => setMetode(e.target.value)}>
-              {METODE_LIST.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
-
-        <Field label="Catatan Bukti Pembayaran (opsional)">
-          <input
-            type="text"
-            className="form-control"
-            placeholder={mode === 'cicil' ? 'mis. Cicilan ke-1 / DP via BCA' : 'mis. Lunas transfer via BCA'}
-            value={catatan}
-            onChange={(e) => setCatatan(e.target.value)}
-          />
-        </Field>
-
-        {/* Riwayat pembayaran jika sudah ada cicilan sebelumnya */}
-        {riwayat.length > 0 && (
-          <div className="mb-3 pt-2 border-top">
-            <div className="small font-weight-bold text-muted mb-2 d-flex align-items-center">
-              <MdHistory className="mr-1" size={15} /> Riwayat Pembayaran Sebelumnya ({riwayat.length}x)
-            </div>
-            <div className="list-group list-group-flush border rounded small" style={{ maxHeight: '140px', overflowY: 'auto' }}>
-              {riwayat.map((p, idx) => (
-                <div key={p.id} className="list-group-item p-2 d-flex justify-content-between align-items-center">
-                  <div>
-                    <span className="badge badge-light border mr-1">#{idx + 1}</span>
-                    <strong>{rupiah(p.jumlah)}</strong>
-                    <span className="text-muted ml-1">· {tanggal(p.tanggal_bayar)} ({p.metode_pembayaran})</span>
-                    {p.catatan && <small className="text-muted d-block">{p.catatan}</small>}
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-outline-danger p-1"
-                    title="Hapus / batalkan transaksi cicilan ini"
-                    onClick={() => handleHapusCicilan(p.id)}
-                  >
-                    <MdDelete size={14} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div className="formactions">
-          <button type="button" className="btn btn-outline-secondary" onClick={onClose} disabled={saving}>
-            Batal
-          </button>
-          <button
-            type="submit"
-            className={`btn ${mode === 'penuh' ? 'btn-success' : 'btn-primary'} d-inline-flex align-items-center`}
-            disabled={saving}
-          >
-            <MdCheckCircle size={16} className="mr-1" />
-            {saving
-              ? 'Menyimpan...'
-              : mode === 'penuh'
-              ? 'Simpan & Tandai Lunas'
-              : `Catat Cicilan (${rupiah(Number(jumlah) || 0)})`}
-          </button>
-        </div>
-      </form>
-    </Modal>
+    </>
   );
 }
 
@@ -1170,55 +543,46 @@ function TambahKamarModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
 
   return (
     <Modal title="Tambah Kamar Baru" onClose={onClose}>
-      <form className="form" onSubmit={submit} noValidate>
-        {errors._ && <div className="alert alert-danger">{errors._}</div>}
+      <form className="grid gap-4" onSubmit={submit} noValidate>
+        {errors._ && (
+          <Alert variant="destructive">
+            <AlertDescription>{errors._}</AlertDescription>
+          </Alert>
+        )}
         <Field label="Nomor kamar *" error={errors.nomor}>
-          <input
-            autoFocus
-            className="form-control"
-            value={form.nomor}
-            onChange={set('nomor')}
-            placeholder="mis. Kamar 13"
-            maxLength={20}
-          />
+          <Input autoFocus value={form.nomor} onChange={set('nomor')} placeholder="mis. Kamar 13" maxLength={20} aria-invalid={!!errors.nomor} />
         </Field>
-        <div className="row2">
+        <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Tipe *" error={errors.tipe}>
-            <select className="form-control" value={form.tipe} onChange={set('tipe')}>
+            <select className={selectClass} value={form.tipe} onChange={set('tipe')}>
               {TIPE_LIST.map((t) => (
                 <option key={t}>{t}</option>
               ))}
             </select>
           </Field>
           <Field label="Harga per bulan (Rp) *" error={errors.harga}>
-            <input
+            <Input
               type="number"
-              className="form-control"
               inputMode="numeric"
               min={1}
               step={50000}
               value={form.harga}
               onChange={set('harga')}
               placeholder="1200000"
+              aria-invalid={!!errors.harga}
             />
           </Field>
         </div>
         <Field label="URL foto (opsional)" error={errors.foto_url}>
-          <input
-            type="url"
-            className="form-control"
-            value={form.foto_url}
-            onChange={set('foto_url')}
-            placeholder="https://..."
-          />
+          <Input type="url" value={form.foto_url} onChange={set('foto_url')} placeholder="https://..." />
         </Field>
-        <div className="formactions">
-          <button type="button" className="btn btn-outline-secondary" onClick={onClose}>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onClose}>
             Batal
-          </button>
-          <button type="submit" className="btn btn-primary" disabled={saving}>
+          </Button>
+          <Button type="submit" disabled={saving}>
             {saving ? 'Menyimpan...' : 'Simpan Kamar'}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>
