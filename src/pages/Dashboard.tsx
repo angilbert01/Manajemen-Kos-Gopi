@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-import { BedDouble, Building2, LayoutGrid, Plus, UserPlus } from 'lucide-react';
-import { api, ApiError, rupiah, tanggal, today } from '../api';
+import { BedDouble, Building2, LayoutGrid, MessageSquareWarning, Plus, UserPlus } from 'lucide-react';
+import { api, ApiError, namaBulan, rupiah, tanggal, today } from '../api';
 import type { Kamar, KamarForm, Penghuni, PenghuniForm, Ringkasan } from '../api';
 import { Field, IconWidget, Modal, Stat, StatusPill, selectClass } from '../components';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -25,9 +25,14 @@ const blankPenghuni = (kamarId?: number): PenghuniForm => ({
 });
 const emptyKamar: KamarForm = { nomor: '', tipe: 'Standar', harga: '', foto_url: '' };
 
-type Props = { go: (page: string, action?: 'tambah', kamarId?: number) => void; notify: (m: string) => void };
+type Props = {
+  go: (page: string, action?: 'tambah', kamarId?: number) => void;
+  notify: (m: string) => void;
+  /** Dipanggil setelah data berubah agar badge ringkasan di header ikut diperbarui. */
+  onChanged?: () => void;
+};
 
-export default function Dashboard({ go, notify }: Props) {
+export default function Dashboard({ go, notify, onChanged }: Props) {
   const [r, setR] = useState<Ringkasan | null>(null);
   const [kamarList, setKamarList] = useState<Kamar[]>([]);
   const [penghuniList, setPenghuniList] = useState<Penghuni[]>([]);
@@ -121,6 +126,7 @@ export default function Dashboard({ go, notify }: Props) {
     try {
       const created = await api.penghuni.create(form);
       notify(`${created.nama} berhasil didaftarkan ke ${created.kamar_nomor}. Status kamar otomatis menjadi "Terisi".`);
+      onChanged?.();
       setForm(blankPenghuni());
       setErrors({});
       await loadAll();
@@ -133,11 +139,13 @@ export default function Dashboard({ go, notify }: Props) {
   };
 
   const catatKeluar = async (p: Penghuni) => {
-    if (!window.confirm(`Catat ${p.nama} keluar dari ${p.kamar_nomor}? Status kamar akan kembali menjadi "Kosong".`))
+    const tunggakan = p.tagihan_belum_lunas ? `\n\nPerhatian: masih ada ${p.tagihan_belum_lunas} tagihan belum lunas. Tagihan tetap tercatat setelah keluar.` : '';
+    if (!window.confirm(`Catat ${p.nama} keluar dari ${p.kamar_nomor}? Status kamar akan kembali menjadi "Kosong".${tunggakan}`))
       return;
     try {
       await api.penghuni.keluar(p.id);
       notify(`${p.nama} tercatat keluar. ${p.kamar_nomor} kini berstatus "Kosong".`);
+      onChanged?.();
       await loadAll();
     } catch (e) {
       notify((e as Error).message);
@@ -192,7 +200,7 @@ export default function Dashboard({ go, notify }: Props) {
 
       <Card>
         <CardHeader className="gap-3">
-          <CardTitle>Rekap Pembayaran {r?.tagihan_bulan ? new Date(`${r.tagihan_bulan}-01T00:00:00`).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' }) : 'Bulan Ini'}</CardTitle>
+          <CardTitle>Rekap Pembayaran {r?.tagihan_bulan ? namaBulan(r.tagihan_bulan) : 'Bulan Ini'}</CardTitle>
           <CardDescription>Pembayaran aktual untuk tagihan periode ini, termasuk cicilan.</CardDescription>
           <CardAction><Button variant="outline" size="sm" onClick={() => go('Tagihan')}>Kelola Tagihan</Button></CardAction>
         </CardHeader>
@@ -407,7 +415,7 @@ export default function Dashboard({ go, notify }: Props) {
       </div>
 
       {/* Baris 3: aksi cepat */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <IconWidget
           Icon={Building2}
           title="Tambah Kamar Baru"
@@ -425,6 +433,12 @@ export default function Dashboard({ go, notify }: Props) {
           title={`${kosong} Kamar Tersedia`}
           subtitle="Buka katalog kamar lengkap"
           onClick={() => go('Kamar')}
+        />
+        <IconWidget
+          Icon={MessageSquareWarning}
+          title={`${r?.keluhan_aktif ?? 0} Keluhan Aktif`}
+          subtitle={`${r?.keluhan_pending ?? 0} menunggu · ${r?.keluhan_diproses ?? 0} diproses`}
+          onClick={() => go('Keluhan')}
         />
       </div>
 
@@ -526,6 +540,7 @@ export default function Dashboard({ go, notify }: Props) {
           onSaved={async (k) => {
             setAddingKamar(false);
             notify(`${k.nomor} berhasil ditambahkan dengan status "Kosong".`);
+            onChanged?.();
             await loadAll();
           }}
         />

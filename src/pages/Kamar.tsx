@@ -19,13 +19,13 @@ const HARGA_MAX = [
 ];
 const emptyForm: KamarForm = { nomor: '', tipe: 'Standar', harga: '', foto_url: '' };
 
-type Props = { notify: (m: string) => void; autoOpen?: boolean; onDaftarkan: (kamarId: number) => void };
+type Props = { notify: (m: string) => void; autoOpen?: boolean; initialQuery?: string; onDaftarkan: (kamarId: number) => void };
 
-export default function KamarPage({ notify, autoOpen = false, onDaftarkan }: Props) {
+export default function KamarPage({ notify, autoOpen = false, initialQuery = '', onDaftarkan }: Props) {
   const [items, setItems] = useState<Kamar[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(initialQuery);
   const [status, setStatus] = useState('');
   const [hargaMax, setHargaMax] = useState('');
   const [editing, setEditing] = useState<Kamar | 'new' | null>(autoOpen ? 'new' : null);

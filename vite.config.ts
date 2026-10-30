@@ -7,5 +7,5 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { '@': path.resolve(import.meta.dirname, './src') } },
   // Teruskan request /api ke server Express saat development.
-  server: { proxy: { '/api': 'http://localhost:3001' } },
+  server: { proxy: { '/api': 'http://127.0.0.1:3001' } },
 });

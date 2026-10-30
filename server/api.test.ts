@@ -363,7 +363,7 @@ test('Sprint 3: pendaftaran penghuni dan tagihannya rollback bersama jika penyim
   t.mock.method(console, 'error', () => {});
   try {
     const result = await call('POST', '/penghuni', {
-      nama: 'Uji Rollback', no_hp: '081234567890', kamar_id: kamar.body.id, tanggal_masuk: '2026-10-10',
+      nama: 'Uji Rollback', no_hp: '081234567891', kamar_id: kamar.body.id, tanggal_masuk: '2026-10-10',
     });
     assert.equal(result.status, 500);
     assert.equal((await call('GET', `/kamar/${kamar.body.id}`)).body.status, 'Kosong');

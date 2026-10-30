@@ -106,6 +106,8 @@ export function validateLunas(body: Record<string, unknown>): { data?: LunasInpu
   const tanggal_bayar = body.tanggal_bayar === undefined || body.tanggal_bayar === '' ? tanggalJakarta() : str(body.tanggal_bayar);
   if (!isIsoDate(tanggal_bayar)) {
     errors.tanggal_bayar = 'Format tanggal bayar harus YYYY-MM-DD.';
+  } else if (tanggal_bayar > tanggalJakarta()) {
+    errors.tanggal_bayar = 'Tanggal bayar tidak boleh di masa depan.';
   }
   const metode = str(body.metode_pembayaran) || 'Tunai';
   const catatan = str(body.catatan);
@@ -171,6 +173,7 @@ export function validateKeluhan(body: Record<string, unknown>): { data?: Keluhan
   const judul = str(body.judul);
   const deskripsi = str(body.deskripsi);
   const kategori = str(body.kategori) || 'Fasilitas Kamar';
+  if (kategori.length > 60) errors.kategori = 'Kategori maksimal 60 karakter.';
   const prioritasRaw = str(body.prioritas) || 'Sedang';
   const foto = str(body.foto_url);
   const tanggal_lapor = str(body.tanggal_lapor) || tanggalJakarta();
@@ -199,6 +202,8 @@ export function validateKeluhan(body: Record<string, unknown>): { data?: Keluhan
   }
   if (!isIsoDate(tanggal_lapor)) {
     errors.tanggal_lapor = 'Format tanggal lapor harus YYYY-MM-DD.';
+  } else if (tanggal_lapor > tanggalJakarta()) {
+    errors.tanggal_lapor = 'Tanggal lapor tidak boleh di masa depan.';
   }
 
   if (Object.keys(errors).length) return { errors };
@@ -237,12 +242,14 @@ export function validateStatusKeluhan(body: Record<string, unknown>): {
 
   if (tanggalSelesaiRaw && !isIsoDate(tanggalSelesaiRaw)) {
     errors.tanggal_selesai = 'Format tanggal selesai harus YYYY-MM-DD.';
+  } else if (tanggalSelesaiRaw && tanggalSelesaiRaw > tanggalJakarta()) {
+    errors.tanggal_selesai = 'Tanggal selesai tidak boleh di masa depan.';
   }
 
   if (Object.keys(errors).length) return { errors };
 
   const status = statusRaw as StatusKeluhan;
-  const tanggal_selesai = status === 'Selesai' ? tanggalSelesaiRaw || tanggalJakarta() : null;
+  const tanggal_selesai = status === 'Selesai' && tanggalSelesaiRaw ? tanggalSelesaiRaw : null;
 
   return {
     data: {

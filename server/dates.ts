@@ -12,3 +12,8 @@ export function isIsoDate(value: string): boolean {
   const date = new Date(`${value}T00:00:00Z`);
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
+
+/** Selisih hari kalender dari tanggal `dari` ke `ke` (keduanya YYYY-MM-DD); negatif bila `ke` lebih awal. */
+export function selisihHari(dari: string, ke: string): number {
+  return Math.round((Date.parse(`${ke}T00:00:00Z`) - Date.parse(`${dari}T00:00:00Z`)) / 86_400_000);
+}

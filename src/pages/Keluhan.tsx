@@ -8,6 +8,7 @@ import {
   Eye,
   Filter,
   Flame,
+  Home,
   MessageSquare,
   MessageSquareWarning,
   Pencil,
@@ -16,26 +17,17 @@ import {
   Search,
   Send,
   Sparkles,
-  Trash2,
   User,
   Wrench,
 } from 'lucide-react';
-import { api, tanggal, today } from '../api';
+import { api, ApiError, tanggal, today, waLink } from '../api';
 import type { Kamar, Keluhan, PrioritasKeluhan, RekapKeluhan, StatusKeluhan } from '../api';
-import { selectClass } from '../components';
+import { Field, Modal, selectClass } from '../components';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 
@@ -54,6 +46,22 @@ const KATEGORI_LIST = [
   'Fasilitas Kamar',
   'Lainnya',
 ];
+
+// Sama dengan aturan server (409 jika di luar ini): Pending -> Diproses -> Selesai, Selesai bisa dibuka kembali.
+const STATUS_BERIKUT: Record<StatusKeluhan, StatusKeluhan[]> = {
+  Pending: ['Diproses'],
+  Diproses: ['Selesai'],
+  Selesai: ['Diproses'],
+};
+
+const LABEL_STATUS: Record<StatusKeluhan, string> = {
+  Pending: 'Pending (Menunggu antrean teknisi)',
+  Diproses: 'Diproses (Sedang diperbaiki / dijadwalkan)',
+  Selesai: 'Selesai (Perbaikan tuntas)',
+};
+
+const textareaClass =
+  'flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:border-destructive';
 
 const TEMPLAT_KELUHAN = [
   {
@@ -88,6 +96,9 @@ const TEMPLAT_KELUHAN = [
   },
 ];
 
+const errorsDari = (err: unknown) =>
+  err instanceof ApiError && Object.keys(err.errors).length ? err.errors : { _: (err as Error).message };
+
 export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
   const [keluhanList, setKeluhanList] = useState<Keluhan[]>([]);
   const [rekap, setRekap] = useState<RekapKeluhan | null>(null);
@@ -116,7 +127,12 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
   const [modalKeluhan, setModalKeluhan] = useState<Keluhan | null>(null);
   const [modalStatus, setModalStatus] = useState<StatusKeluhan>('Diproses');
   const [modalCatatan, setModalCatatan] = useState('');
+  const [modalTanggal, setModalTanggal] = useState('');
+  const [modalErrors, setModalErrors] = useState<Record<string, string>>({});
   const [updatingStatus, setUpdatingStatus] = useState(false);
+
+  // Id keluhan yang sedang diproses tombol cepat (cegah klik ganda)
+  const [busyId, setBusyId] = useState<number | null>(null);
 
   // Modal Detail Keluhan
   const [detailKeluhan, setDetailKeluhan] = useState<Keluhan | null>(null);
@@ -143,13 +159,22 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
     loadData();
   }, [loadData]);
 
+  const selectedKamar = kamarList.find((k) => String(k.id) === formKamarId);
+
+  const resetForm = () => {
+    setFormJudul('');
+    setFormDeskripsi('');
+    setFormFotoUrl('');
+    setFormErrors({});
+  };
+
   // Handle Simpan Keluhan Baru (WBS 3.1)
   const handleSubmitKeluhan = async (e: React.FormEvent) => {
     e.preventDefault();
     const errors: Record<string, string> = {};
-    if (!formKamarId) errors.kamar_id = 'Pilih kamar Anda.';
+    if (!formKamarId) errors.kamar_id = 'Pilih kamar.';
     if (!formJudul.trim()) errors.judul = 'Judul keluhan wajib diisi.';
-    if (!formDeskripsi.trim()) errors.deskripsi = 'Deskripsi detail keluhan wajib diisi.';
+    if (!formDeskripsi.trim()) errors.deskripsi = 'Deskripsi keluhan wajib diisi.';
 
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
@@ -159,9 +184,9 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
     setSubmittingForm(true);
 
     try {
-      const selectedKamar = kamarList.find((k) => String(k.id) === String(formKamarId));
       await api.keluhan.create({
         kamar_id: Number(formKamarId),
+        // Penghuni selalu diambil dari kamar terpilih; kamar kosong = tanpa penghuni.
         penghuni_id: selectedKamar?.penghuni_id ?? null,
         judul: formJudul.trim(),
         deskripsi: formDeskripsi.trim(),
@@ -171,15 +196,13 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
         tanggal_lapor: today(),
       });
 
-      notify('✅ Keluhan fasilitas berhasil dikirim! Status awal: Pending.');
-      setFormJudul('');
-      setFormDeskripsi('');
-      setFormFotoUrl('');
+      notify('Keluhan berhasil dikirim dengan status Pending.');
+      resetForm();
       await loadData();
       onChanged?.();
       setViewMode('semua');
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Gagal mengirim keluhan.');
+      setFormErrors(errorsDari(err));
     } finally {
       setSubmittingForm(false);
     }
@@ -193,60 +216,54 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
     setFormPrioritas(t.prioritas);
   };
 
-  // Handle Cepat Ubah Status (1-klik WBS 3.2)
+  // Handle Cepat Ubah Status (1-klik WBS 3.2). Tanpa catatan/tanggal: server menyimpan catatan lama dan mengisi tanggal selesai.
   const handleQuickStatusChange = async (keluhan: Keluhan, statusBaru: StatusKeluhan) => {
+    setBusyId(keluhan.id);
     try {
-      await api.keluhan.updateStatus(keluhan.id, {
-        status: statusBaru,
-        catatan_penanganan:
-          statusBaru === 'Diproses'
-            ? keluhan.catatan_penanganan || 'Keluhan telah diterima pemilik dan sedang dalam penanganan teknisi.'
-            : statusBaru === 'Selesai'
-              ? keluhan.catatan_penanganan || 'Perbaikan fasilitas telah selesai dikerjakan.'
-              : undefined,
-        tanggal_selesai: statusBaru === 'Selesai' ? today() : undefined,
-      });
-
-      notify(`Status keluhan diperbarui menjadi "${statusBaru}".`);
+      await api.keluhan.updateStatus(keluhan.id, { status: statusBaru });
+      notify(`Status keluhan diperbarui menjadi ${statusBaru}.`);
       await loadData();
       onChanged?.();
     } catch (err) {
       notify(err instanceof Error ? err.message : 'Gagal memperbarui status keluhan.');
+    } finally {
+      setBusyId(null);
     }
   };
 
+  const bukaModalStatus = (k: Keluhan) => {
+    setModalKeluhan(k);
+    setModalStatus(k.status);
+    setModalCatatan(k.catatan_penanganan || '');
+    setModalTanggal(k.tanggal_selesai || '');
+    setModalErrors({});
+  };
+
   // Handle Update Status lewat Modal (dengan input catatan teknisi/pemilik)
-  const handleSaveModalStatus = async () => {
+  const handleSaveModalStatus = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!modalKeluhan) return;
     setUpdatingStatus(true);
+    setModalErrors({});
     try {
       await api.keluhan.updateStatus(modalKeluhan.id, {
         status: modalStatus,
         catatan_penanganan: modalCatatan.trim(),
-        tanggal_selesai: modalStatus === 'Selesai' ? today() : undefined,
+        // Kirim tanggal selesai hanya jika diisi/diubah pengguna; selain itu server memakai tanggal lama atau hari ini.
+        tanggal_selesai:
+          modalStatus === 'Selesai' && modalTanggal && modalTanggal !== modalKeluhan.tanggal_selesai
+            ? modalTanggal
+            : undefined,
       });
 
-      notify(`✅ Keluhan "${modalKeluhan.judul}" berhasil diubah menjadi ${modalStatus}.`);
+      notify(`Keluhan "${modalKeluhan.judul}" berhasil diperbarui (${modalStatus}).`);
       setModalKeluhan(null);
       await loadData();
       onChanged?.();
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Gagal memperbarui status.');
+      setModalErrors(errorsDari(err));
     } finally {
       setUpdatingStatus(false);
-    }
-  };
-
-  // Handle Hapus Keluhan
-  const handleDeleteKeluhan = async (id: number, judul: string) => {
-    if (!window.confirm(`Hapus laporan keluhan "${judul}"?`)) return;
-    try {
-      await api.keluhan.remove(id);
-      notify('Keluhan berhasil dihapus.');
-      await loadData();
-      onChanged?.();
-    } catch (err) {
-      notify(err instanceof Error ? err.message : 'Gagal menghapus keluhan.');
     }
   };
 
@@ -269,22 +286,22 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
     switch (status) {
       case 'Pending':
         return (
-          <Badge variant="outline" className="border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-            <Clock className="mr-1 size-3" />
+          <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-900">
+            <Clock className="mr-1 size-3" aria-hidden />
             Pending
           </Badge>
         );
       case 'Diproses':
         return (
-          <Badge variant="outline" className="border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
-            <Wrench className="mr-1 size-3" />
+          <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-800">
+            <Wrench className="mr-1 size-3" aria-hidden />
             Diproses
           </Badge>
         );
       case 'Selesai':
         return (
-          <Badge variant="outline" className="border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-            <CheckCircle2 className="mr-1 size-3" />
+          <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800">
+            <CheckCircle2 className="mr-1 size-3" aria-hidden />
             Selesai
           </Badge>
         );
@@ -295,53 +312,47 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
     switch (prioritas) {
       case 'Tinggi':
         return (
-          <Badge variant="destructive" className="gap-1">
-            <Flame className="size-3" />
+          <Badge variant="outline" className="gap-1 border-red-200 bg-red-50 text-red-800">
+            <Flame className="size-3" aria-hidden />
             Tinggi
           </Badge>
         );
       case 'Sedang':
         return (
-          <Badge variant="secondary" className="gap-1 bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
-            <AlertTriangle className="size-3" />
+          <Badge variant="secondary" className="gap-1">
+            <AlertTriangle className="size-3" aria-hidden />
             Sedang
           </Badge>
         );
       case 'Rendah':
         return (
-          <Badge variant="secondary" className="text-muted-foreground">
+          <Badge variant="outline" className="text-muted-foreground">
             Rendah
           </Badge>
         );
     }
   };
 
-  // Buka WhatsApp untuk konfirmasi penanganan ke penghuni
-  const kirimWhatsApp = (keluhan: Keluhan) => {
-    const hp = keluhan.penghuni_no_hp?.replace(/^0/, '62');
-    if (!hp) {
-      notify('Nomor WhatsApp penghuni tidak tersedia.');
-      return;
-    }
-    const pesan = encodeURIComponent(
+  // Link WhatsApp untuk konfirmasi penanganan ke penghuni
+  const linkWhatsApp = (keluhan: Keluhan) =>
+    waLink(
+      keluhan.penghuni_no_hp,
       `Halo Kak ${keluhan.penghuni_nama} (${keluhan.kamar_nomor}),\n\n` +
         `Mengenai laporan keluhan fasilitas:\n` +
-        `📌 *${keluhan.judul}*\n` +
+        `*${keluhan.judul}*\n` +
         `Status saat ini: *${keluhan.status.toUpperCase()}*\n` +
         (keluhan.catatan_penanganan ? `Catatan penanganan: ${keluhan.catatan_penanganan}\n` : '') +
-        `\nTerima kasih atas laporannya. Kami terus berupaya menjaga kenyamanan Kos Gopi. 🙏`,
+        `\nTerima kasih atas laporannya. Kami terus berupaya menjaga kenyamanan Kos Gopi.`,
     );
-    window.open(`https://wa.me/${hp}?text=${pesan}`, '_blank');
-  };
 
   return (
     <div className="space-y-6">
       {/* Header Info & Switcher Mode (WBS 3.1 & WBS 3.2) */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Sistem Manajemen Keluhan Fasilitas</h2>
+          <h2 className="text-2xl font-bold tracking-tight">Keluhan Fasilitas</h2>
           <p className="text-sm text-muted-foreground">
-            Layanan penanganan kerusakan & fasilitas kamar antara penghuni dan pemilik kos (EP-03 WBS 3.1 & 3.2).
+            Pencatatan dan penanganan kerusakan fasilitas kamar antara penghuni dan pemilik kos.
           </p>
         </div>
 
@@ -386,7 +397,7 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
             <CardDescription className="text-xs font-semibold uppercase tracking-wider">Total Laporan</CardDescription>
             <CardTitle className="text-3xl font-bold tabular-nums">{rekap?.total ?? keluhanList.length}</CardTitle>
           </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">Semua tiket keluhan fasilitas masuk</CardContent>
+          <CardContent className="text-xs text-muted-foreground">Semua laporan keluhan fasilitas masuk</CardContent>
         </Card>
 
         <Card className="border-l-4 border-l-amber-500 bg-amber-500/5">
@@ -434,10 +445,10 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
               <div>
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <MessageSquareWarning className="size-5 text-primary" />
-                  Form Input Keluhan Fasilitas (Sisi Penghuni — WBS 3.1)
+                  Laporkan Keluhan Fasilitas
                 </CardTitle>
                 <CardDescription>
-                  Laporkan kerusakan atau kendala fasilitas kamar Anda. Keluhan langsung tercatat dengan status awal
+                  Laporkan kerusakan atau kendala fasilitas kamar. Keluhan langsung tercatat dengan status awal
                   &quot;Pending&quot;.
                 </CardDescription>
               </div>
@@ -450,9 +461,9 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
           <CardContent className="pt-6">
             {/* Quick Fill Chips */}
             <div className="mb-6 space-y-2">
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                💡 Template Keluhan Cepat (Klik untuk isi otomatis):
-              </Label>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Template keluhan (klik untuk isi otomatis):
+              </p>
               <div className="flex flex-wrap gap-2">
                 {TEMPLAT_KELUHAN.map((t, idx) => (
                   <Button
@@ -469,35 +480,47 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
               </div>
             </div>
 
-            <form onSubmit={handleSubmitKeluhan} className="space-y-4">
+            <form onSubmit={handleSubmitKeluhan} className="space-y-4" noValidate>
+              {formErrors._ && (
+                <Alert variant="destructive">
+                  <AlertDescription>{formErrors._}</AlertDescription>
+                </Alert>
+              )}
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {/* Pilih Kamar */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="form-kamar">Kamar Pelapor *</Label>
+                {/* Pilih Kamar — penghuni mengikuti kamar */}
+                <Field
+                  label="Kamar pelapor *"
+                  error={formErrors.kamar_id || formErrors.penghuni_id}
+                  hint={
+                    selectedKamar
+                      ? selectedKamar.penghuni_id
+                        ? `Penghuni: ${selectedKamar.penghuni_nama}`
+                        : 'Kamar kosong — tanpa penghuni'
+                      : undefined
+                  }
+                >
                   <select
-                    id="form-kamar"
                     value={formKamarId}
                     onChange={(e) => setFormKamarId(e.target.value)}
-                    className={cn(selectClass, formErrors.kamar_id && 'border-destructive')}
+                    className={selectClass}
+                    aria-invalid={!!(formErrors.kamar_id || formErrors.penghuni_id)}
                   >
                     <option value="">-- Pilih Kamar --</option>
                     {kamarList.map((k) => (
                       <option key={k.id} value={k.id}>
-                        {k.nomor} ({k.tipe}) {k.penghuni_nama ? `— ${k.penghuni_nama}` : ''}
+                        {k.nomor} ({k.tipe}) — {k.penghuni_id ? k.penghuni_nama : 'Kamar kosong'}
                       </option>
                     ))}
                   </select>
-                  {formErrors.kamar_id && <p className="text-xs text-destructive">{formErrors.kamar_id}</p>}
-                </div>
+                </Field>
 
                 {/* Kategori Fasilitas */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="form-kategori">Kategori Fasilitas</Label>
+                <Field label="Kategori fasilitas" error={formErrors.kategori}>
                   <select
-                    id="form-kategori"
                     value={formKategori}
                     onChange={(e) => setFormKategori(e.target.value)}
                     className={selectClass}
+                    aria-invalid={!!formErrors.kategori}
                   >
                     {KATEGORI_LIST.map((kat) => (
                       <option key={kat} value={kat}>
@@ -505,79 +528,64 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
                       </option>
                     ))}
                   </select>
-                </div>
+                </Field>
 
                 {/* Prioritas */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="form-prioritas">Tingkat Urgensi / Prioritas</Label>
+                <Field label="Prioritas" error={formErrors.prioritas}>
                   <select
-                    id="form-prioritas"
                     value={formPrioritas}
                     onChange={(e) => setFormPrioritas(e.target.value as PrioritasKeluhan)}
                     className={selectClass}
+                    aria-invalid={!!formErrors.prioritas}
                   >
                     <option value="Rendah">Rendah (Bisa ditangani berkala)</option>
                     <option value="Sedang">Sedang (Perlu penanganan biasa)</option>
                     <option value="Tinggi">Tinggi (Mendesak / Mengganggu aktivitas)</option>
                   </select>
-                </div>
+                </Field>
               </div>
 
               {/* Judul Keluhan */}
-              <div className="space-y-1.5">
-                <Label htmlFor="form-judul">Judul Keluhan Singkat *</Label>
+              <Field label="Judul keluhan *" error={formErrors.judul}>
                 <Input
-                  id="form-judul"
                   placeholder="Contoh: AC menetes dan tidak dingin / Kran wastafel doll"
                   value={formJudul}
                   onChange={(e) => setFormJudul(e.target.value)}
-                  className={formErrors.judul ? 'border-destructive' : ''}
+                  maxLength={120}
+                  aria-invalid={!!formErrors.judul}
                 />
-                {formErrors.judul && <p className="text-xs text-destructive">{formErrors.judul}</p>}
-              </div>
+              </Field>
 
               {/* Deskripsi Detail */}
-              <div className="space-y-1.5">
-                <Label htmlFor="form-deskripsi">Deskripsi Detail Kerusakan & Lokasi *</Label>
+              <Field label="Deskripsi kerusakan & lokasi *" error={formErrors.deskripsi}>
                 <textarea
-                  id="form-deskripsi"
                   placeholder="Jelaskan secara rinci kendala yang terjadi, sejak kapan terjadi, dan dampaknya..."
                   rows={3}
                   value={formDeskripsi}
                   onChange={(e) => setFormDeskripsi(e.target.value)}
-                  className={cn(
-                    'flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]',
-                    formErrors.deskripsi && 'border-destructive',
-                  )}
+                  maxLength={1000}
+                  aria-invalid={!!formErrors.deskripsi}
+                  className={textareaClass}
                 />
-                {formErrors.deskripsi && <p className="text-xs text-destructive">{formErrors.deskripsi}</p>}
-              </div>
+              </Field>
 
               {/* URL Foto (Opsional) */}
-              <div className="space-y-1.5">
-                <Label htmlFor="form-foto">Link / URL Foto Bukti Kerusakan (Opsional)</Label>
+              <Field
+                label="URL foto bukti kerusakan (opsional)"
+                error={formErrors.foto_url}
+                hint="Lampirkan URL foto jika ada untuk memudahkan identifikasi teknisi."
+              >
                 <Input
-                  id="form-foto"
                   type="url"
                   placeholder="https://contoh.com/foto-kerusakan.jpg"
                   value={formFotoUrl}
                   onChange={(e) => setFormFotoUrl(e.target.value)}
+                  aria-invalid={!!formErrors.foto_url}
                 />
-                <p className="text-[11px] text-muted-foreground">
-                  Opsional: Lampirkan URL foto jika ada untuk memudahkan identifikasi teknisi.
-                </p>
-              </div>
+              </Field>
 
               <div className="flex justify-end gap-3 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setFormJudul('');
-                    setFormDeskripsi('');
-                    setFormFotoUrl('');
-                  }}
-                >
+                <Button type="button" variant="outline" onClick={resetForm}>
                   Reset Form
                 </Button>
                 <Button type="submit" disabled={submittingForm} className="gap-2">
@@ -596,9 +604,9 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
           <CardHeader className="pb-4">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <CardTitle className="text-lg">Daftar & Penanganan Keluhan (Sisi Pemilik — WBS 3.2)</CardTitle>
+                <CardTitle className="text-lg">Daftar & Penanganan Keluhan</CardTitle>
                 <CardDescription>
-                  Kelola tiket kerusakan fasilitas, update status penanganan (Pending ➔ Diproses ➔ Selesai), dan beri
+                  Kelola laporan kerusakan fasilitas, perbarui status penanganan (Pending, Diproses, Selesai), dan beri
                   catatan perbaikan.
                 </CardDescription>
               </div>
@@ -613,6 +621,7 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
               <div className="relative flex-1">
                 <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
+                  aria-label="Cari keluhan"
                   placeholder="Cari keluhan (kamar, nama penghuni, masalah)..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -626,6 +635,7 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
                   Status:
                 </div>
                 <select
+                  aria-label="Filter status"
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value)}
                   className={cn(selectClass, 'h-9 w-32 text-xs')}
@@ -638,6 +648,7 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
 
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">Prioritas:</div>
                 <select
+                  aria-label="Filter prioritas"
                   value={filterPrioritas}
                   onChange={(e) => setFilterPrioritas(e.target.value)}
                   className={cn(selectClass, 'h-9 w-32 text-xs')}
@@ -689,7 +700,8 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
                           </div>
                           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                             <span className="flex items-center gap-1 font-medium text-foreground">
-                              🏠 {k.kamar_nomor} ({k.kamar_tipe})
+                              <Home className="size-3" aria-hidden />
+                              {k.kamar_nomor} ({k.kamar_tipe})
                             </span>
                             <span>•</span>
                             <span className="flex items-center gap-1">
@@ -766,9 +778,7 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
                       {/* Catatan Penanganan Teknisi / Pemilik */}
                       {k.catatan_penanganan && (
                         <div className="rounded-md border border-blue-200 bg-blue-50/50 p-2.5 text-xs dark:border-blue-900/60 dark:bg-blue-950/20">
-                          <span className="font-semibold text-blue-900 dark:text-blue-300">
-                            📝 Catatan Penanganan:
-                          </span>{' '}
+                          <span className="font-semibold text-blue-900 dark:text-blue-300">Catatan penanganan:</span>{' '}
                           <span className="text-blue-800 dark:text-blue-200">{k.catatan_penanganan}</span>
                         </div>
                       )}
@@ -784,10 +794,11 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
                             size="sm"
                             variant="default"
                             className="h-8 gap-1.5 bg-blue-600 hover:bg-blue-700 text-xs text-white"
+                            disabled={busyId === k.id}
                             onClick={() => handleQuickStatusChange(k, 'Diproses')}
                           >
                             <Wrench className="size-3.5" />
-                            Proses Sekarang
+                            {busyId === k.id ? 'Menyimpan...' : 'Proses Sekarang'}
                           </Button>
                         )}
 
@@ -796,10 +807,11 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
                             size="sm"
                             variant="default"
                             className="h-8 gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-xs text-white"
+                            disabled={busyId === k.id}
                             onClick={() => handleQuickStatusChange(k, 'Selesai')}
                           >
                             <Check className="size-3.5" />
-                            Tandai Selesai
+                            {busyId === k.id ? 'Menyimpan...' : 'Tandai Selesai'}
                           </Button>
                         )}
 
@@ -808,10 +820,11 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
                             size="sm"
                             variant="outline"
                             className="h-8 gap-1.5 text-xs text-amber-600 hover:bg-amber-50"
+                            disabled={busyId === k.id}
                             onClick={() => handleQuickStatusChange(k, 'Diproses')}
                           >
                             <RefreshCw className="size-3.5" />
-                            Buka Kembali (Diproses)
+                            {busyId === k.id ? 'Menyimpan...' : 'Buka kembali'}
                           </Button>
                         )}
 
@@ -820,48 +833,37 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
                           size="sm"
                           variant="outline"
                           className="h-8 gap-1.5 text-xs"
-                          onClick={() => {
-                            setModalKeluhan(k);
-                            setModalStatus(k.status);
-                            setModalCatatan(k.catatan_penanganan || '');
-                          }}
+                          onClick={() => bukaModalStatus(k)}
                         >
                           <Pencil className="size-3.5" />
                           Ubah Status & Catatan
                         </Button>
 
-                        {/* WhatsApp Notifikasi Penghuni */}
+                        {/* WhatsApp Notifikasi Penghuni (kamar kosong tidak punya nomor) */}
                         {k.penghuni_no_hp && (
                           <Button
+                            asChild
                             size="sm"
                             variant="outline"
                             className="h-8 gap-1.5 text-xs text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
-                            onClick={() => kirimWhatsApp(k)}
                           >
-                            <MessageSquare className="size-3.5" />
-                            WA Penghuni
+                            <a href={linkWhatsApp(k)} target="_blank" rel="noopener noreferrer">
+                              <MessageSquare className="size-3.5" />
+                              WA Penghuni
+                            </a>
                           </Button>
                         )}
                       </div>
 
-                      <div className="flex items-center gap-1.5">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-8 px-2 text-xs"
-                          onClick={() => setDetailKeluhan(k)}
-                        >
-                          <Eye className="size-3.5" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-8 px-2 text-xs text-destructive hover:bg-destructive/10"
-                          onClick={() => handleDeleteKeluhan(k.id, k.judul)}
-                        >
-                          <Trash2 className="size-3.5" />
-                        </Button>
-                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 px-2 text-xs"
+                        aria-label={`Lihat detail keluhan ${k.judul}`}
+                        onClick={() => setDetailKeluhan(k)}
+                      >
+                        <Eye className="size-3.5" />
+                      </Button>
                     </CardFooter>
                   </Card>
                 ))}
@@ -872,157 +874,165 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
       )}
 
       {/* MODAL UPDATE STATUS KELUHAN (WBS 3.2) */}
-      <Dialog open={!!modalKeluhan} onOpenChange={(open) => !open && setModalKeluhan(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Pencil className="size-5 text-primary" />
-              Update Status Keluhan Fasilitas
-            </DialogTitle>
-            <DialogDescription>
-              Perbarui status penanganan untuk kamar <strong>{modalKeluhan?.kamar_nomor}</strong>: &quot;
-              {modalKeluhan?.judul}&quot;
-            </DialogDescription>
-          </DialogHeader>
+      {modalKeluhan && (
+        <Modal title="Ubah Status Keluhan" onClose={() => setModalKeluhan(null)}>
+          <form className="grid gap-4" onSubmit={handleSaveModalStatus} noValidate>
+            <p className="text-sm text-muted-foreground">
+              Kamar <strong>{modalKeluhan.kamar_nomor}</strong>: &quot;{modalKeluhan.judul}&quot;
+            </p>
+            {modalErrors._ && (
+              <Alert variant="destructive">
+                <AlertDescription>{modalErrors._}</AlertDescription>
+              </Alert>
+            )}
 
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="modal-status">Pilih Status Baru</Label>
+            <Field label="Status" error={modalErrors.status}>
               <select
-                id="modal-status"
                 value={modalStatus}
                 onChange={(e) => setModalStatus(e.target.value as StatusKeluhan)}
                 className={selectClass}
+                aria-invalid={!!modalErrors.status}
               >
-                <option value="Pending">Pending (Menunggu antrian teknisi)</option>
-                <option value="Diproses">Diproses (Sedang diperbaiki / dijadwalkan)</option>
-                <option value="Selesai">Selesai (Perbaikan tuntas normal)</option>
+                <option value={modalKeluhan.status}>{LABEL_STATUS[modalKeluhan.status]} — saat ini</option>
+                {STATUS_BERIKUT[modalKeluhan.status].map((s) => (
+                  <option key={s} value={s}>
+                    {modalKeluhan.status === 'Selesai' ? 'Buka kembali (Diproses)' : LABEL_STATUS[s]}
+                  </option>
+                ))}
               </select>
-            </div>
+            </Field>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="modal-catatan">Catatan Penanganan & Tindak Lanjut</Label>
+            {modalStatus === 'Selesai' && (
+              <Field
+                label="Tanggal selesai"
+                error={modalErrors.tanggal_selesai}
+                hint={modalKeluhan.status === 'Selesai' ? undefined : 'Kosongkan untuk memakai tanggal hari ini.'}
+              >
+                <Input
+                  type="date"
+                  value={modalTanggal}
+                  min={modalKeluhan.tanggal_lapor}
+                  max={today()}
+                  onChange={(e) => setModalTanggal(e.target.value)}
+                  aria-invalid={!!modalErrors.tanggal_selesai}
+                />
+              </Field>
+            )}
+
+            <Field
+              label="Catatan penanganan & tindak lanjut"
+              error={modalErrors.catatan_penanganan}
+              hint="Catatan tersimpan di riwayat dan dapat diteruskan ke penghuni lewat WhatsApp."
+            >
               <textarea
-                id="modal-catatan"
-                placeholder="Contoh: Teknisi pipa dijadwalkan datang jam 14.00 WIB untuk penggantian seal kran / Selesai diganti bohlam baru."
+                placeholder="Contoh: Teknisi dijadwalkan datang jam 14.00 WIB untuk mengganti seal kran."
                 rows={4}
                 value={modalCatatan}
                 onChange={(e) => setModalCatatan(e.target.value)}
-                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+                maxLength={500}
+                aria-invalid={!!modalErrors.catatan_penanganan}
+                className={textareaClass}
               />
-              <p className="text-[11px] text-muted-foreground">
-                Catatan ini akan tersimpan di riwayat dan dapat diteruskan ke penghuni via WhatsApp.
-              </p>
-            </div>
-          </div>
+            </Field>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setModalKeluhan(null)}>
-              Batal
-            </Button>
-            <Button onClick={handleSaveModalStatus} disabled={updatingStatus}>
-              {updatingStatus ? 'Menyimpan...' : 'Simpan Pembaruan'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setModalKeluhan(null)}>
+                Batal
+              </Button>
+              <Button type="submit" disabled={updatingStatus}>
+                {updatingStatus ? 'Menyimpan...' : 'Simpan'}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
 
       {/* MODAL DETAIL KELUHAN */}
-      <Dialog open={!!detailKeluhan} onOpenChange={(open) => !open && setDetailKeluhan(null)}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <MessageSquareWarning className="size-5 text-primary" />
-              Detail Keluhan Fasilitas #{detailKeluhan?.id}
-            </DialogTitle>
-            <DialogDescription>Informasi lengkap laporan dan riwayat tindak lanjut penanganan.</DialogDescription>
-          </DialogHeader>
+      {detailKeluhan && (
+        <Modal title={`Detail Keluhan #${detailKeluhan.id}`} onClose={() => setDetailKeluhan(null)}>
+          <div className="space-y-4 text-sm">
+            <div className="flex items-center justify-between border-b pb-2">
+              <span className="font-semibold text-base">{detailKeluhan.judul}</span>
+              {getStatusBadge(detailKeluhan.status)}
+            </div>
 
-          {detailKeluhan && (
-            <div className="space-y-4 py-2 text-sm">
-              <div className="flex items-center justify-between border-b pb-2">
-                <span className="font-semibold text-base">{detailKeluhan.judul}</span>
-                {getStatusBadge(detailKeluhan.status)}
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div>
-                  <span className="text-muted-foreground">Kamar:</span>
-                  <p className="font-medium">
-                    {detailKeluhan.kamar_nomor} ({detailKeluhan.kamar_tipe})
-                  </p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Penghuni:</span>
-                  <p className="font-medium">{detailKeluhan.penghuni_nama || '-'}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Kategori:</span>
-                  <p className="font-medium">{detailKeluhan.kategori}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Tingkat Prioritas:</span>
-                  <div>{getPrioritasBadge(detailKeluhan.prioritas)}</div>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Tanggal Lapor:</span>
-                  <p className="font-medium">{tanggal(detailKeluhan.tanggal_lapor)}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Tanggal Selesai:</span>
-                  <p className="font-medium">
-                    {detailKeluhan.tanggal_selesai ? tanggal(detailKeluhan.tanggal_selesai) : 'Belum Selesai'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <span className="text-xs font-semibold text-muted-foreground">Deskripsi Lengkap:</span>
-                <p className="rounded-md border bg-muted/20 p-3 leading-relaxed whitespace-pre-wrap">
-                  {detailKeluhan.deskripsi}
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <span className="text-muted-foreground">Kamar:</span>
+                <p className="font-medium">
+                  {detailKeluhan.kamar_nomor} ({detailKeluhan.kamar_tipe})
                 </p>
               </div>
-
-              {detailKeluhan.foto_url && (
-                <div className="space-y-1">
-                  <span className="text-xs font-semibold text-muted-foreground">Foto Bukti Kerusakan:</span>
-                  <div className="rounded-md border p-2">
-                    <img
-                      src={detailKeluhan.foto_url}
-                      alt="Bukti kerusakan"
-                      className="max-h-56 w-full rounded object-contain"
-                      onError={(e) => {
-                        (e.target as HTMLElement).style.display = 'none';
-                      }}
-                    />
-                    <a
-                      href={detailKeluhan.foto_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-1 block text-xs text-primary hover:underline"
-                    >
-                      Buka Tautan Foto Asli
-                    </a>
-                  </div>
-                </div>
-              )}
-
-              {detailKeluhan.catatan_penanganan && (
-                <div className="space-y-1">
-                  <span className="text-xs font-semibold text-muted-foreground">Catatan Penanganan:</span>
-                  <p className="rounded-md border border-blue-200 bg-blue-50/50 p-3 text-blue-900 leading-relaxed dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
-                    {detailKeluhan.catatan_penanganan}
-                  </p>
-                </div>
-              )}
+              <div>
+                <span className="text-muted-foreground">Penghuni:</span>
+                <p className="font-medium">{detailKeluhan.penghuni_nama || '-'}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Kategori:</span>
+                <p className="font-medium">{detailKeluhan.kategori}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Prioritas:</span>
+                <div>{getPrioritasBadge(detailKeluhan.prioritas)}</div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Tanggal Lapor:</span>
+                <p className="font-medium">{tanggal(detailKeluhan.tanggal_lapor)}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Tanggal Selesai:</span>
+                <p className="font-medium">
+                  {detailKeluhan.tanggal_selesai ? tanggal(detailKeluhan.tanggal_selesai) : 'Belum Selesai'}
+                </p>
+              </div>
             </div>
-          )}
 
-          <DialogFooter>
-            <Button onClick={() => setDetailKeluhan(null)}>Tutup</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <div className="space-y-1">
+              <span className="text-xs font-semibold text-muted-foreground">Deskripsi Lengkap:</span>
+              <p className="rounded-md border bg-muted/20 p-3 leading-relaxed whitespace-pre-wrap">
+                {detailKeluhan.deskripsi}
+              </p>
+            </div>
+
+            {detailKeluhan.foto_url && (
+              <div className="space-y-1">
+                <span className="text-xs font-semibold text-muted-foreground">Foto Bukti Kerusakan:</span>
+                <div className="rounded-md border p-2">
+                  <img
+                    src={detailKeluhan.foto_url}
+                    alt="Bukti kerusakan"
+                    className="max-h-56 w-full rounded object-contain"
+                    onError={(e) => {
+                      (e.target as HTMLElement).style.display = 'none';
+                    }}
+                  />
+                  <a
+                    href={detailKeluhan.foto_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 block text-xs text-primary hover:underline"
+                  >
+                    Buka Tautan Foto Asli
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {detailKeluhan.catatan_penanganan && (
+              <div className="space-y-1">
+                <span className="text-xs font-semibold text-muted-foreground">Catatan Penanganan:</span>
+                <p className="rounded-md border border-blue-200 bg-blue-50/50 p-3 text-blue-900 leading-relaxed dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+                  {detailKeluhan.catatan_penanganan}
+                </p>
+              </div>
+            )}
+
+            <div className="flex justify-end">
+              <Button onClick={() => setDetailKeluhan(null)}>Tutup</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

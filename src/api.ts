@@ -29,6 +29,9 @@ export interface Penghuni {
   tanggal_keluar: string | null;
   aktif: 0 | 1;
   created_at: string;
+  tagihan_belum_lunas: number;
+  /** 1 bila penghuni sudah menghubungkan chatbot (Telegram). */
+  chat_terhubung: 0 | 1;
 }
 
 export interface AdminProfile {
@@ -93,6 +96,12 @@ export interface Tagihan {
   kamar_nomor: string;
   kamar_tipe: string;
   kamar_harga: number;
+}
+
+/** Tagihan yang perlu diingatkan hari ini (WBS 4.1). `hari` = selisih hari ke jatuh tempo (negatif = terlambat). */
+export interface PengingatTagihan extends Tagihan {
+  pengingat: 'H-3' | 'H-0' | 'Terlambat';
+  hari: number;
 }
 
 export interface Pembayaran {
@@ -260,6 +269,7 @@ export const api = {
     list: (semua = false) => request<Penghuni[]>('GET', `/penghuni${semua ? '?semua=1' : ''}`),
     create: (f: PenghuniForm) => request<Penghuni>('POST', '/penghuni', { ...f, kamar_id: Number(f.kamar_id) }),
     keluar: (id: number) => request<Penghuni>('PATCH', `/penghuni/${id}/keluar`, {}),
+    kodeChat: (id: number) => request<{ kode: string }>('POST', `/penghuni/${id}/kode-chat`, {}),
   },
   tagihan: {
     list: (f: { bulan?: string; status?: string; q?: string } = {}) => request<Tagihan[]>('GET', `/tagihan${qs(f)}`),
@@ -270,7 +280,9 @@ export const api = {
     pembayaran: (id: number) => request<Pembayaran[]>('GET', `/tagihan/${id}/pembayaran`),
     bayar: (id: number, payload: PembayaranPayload) => request<Tagihan>('POST', `/tagihan/${id}/pembayaran`, payload),
     hapusPembayaran: (pembayaranId: number) => request<Tagihan>('DELETE', `/pembayaran/${pembayaranId}`),
-    remove: (id: number) => request<void>('DELETE', `/tagihan/${id}`),
+    pengingat: () => request<PengingatTagihan[]>('GET', '/tagihan/pengingat'),
+    linkBayar: (id: number) =>
+      request<{ order_id: string; payment_url: string; jumlah: number; provider: 'midtrans' | 'simulasi' }>('POST', `/tagihan/${id}/link-bayar`, {}),
   },
   keluhan: {
     list: (f: { status?: string; prioritas?: string; kamar_id?: string; penghuni_id?: string; q?: string } = {}) =>
@@ -284,13 +296,16 @@ export const api = {
       }),
     updateStatus: (id: number, payload: UpdateStatusKeluhanPayload) =>
       request<Keluhan>('PATCH', `/keluhan/${id}/status`, payload),
-    remove: (id: number) => request<void>('DELETE', `/keluhan/${id}`),
   },
 };
 
 export const rupiah = (amount: number) => `Rp ${amount.toLocaleString('id-ID')}`;
 export const tanggal = (iso: string) =>
   new Date(`${iso}T00:00:00`).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+/** Link wa.me dengan pesan terisi. Nomor 08xx / +628xx / 628xx dinormalkan ke 628xx. */
+export const waLink = (noHp: string, pesan: string) =>
+  `https://wa.me/${noHp.replace(/\D/g, '').replace(/^0/, '62')}?text=${encodeURIComponent(pesan)}`;
+
 export const today = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

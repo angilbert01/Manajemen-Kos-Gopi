@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api, ApiError, rupiah, tanggal, today } from '../api';
 import type { Kamar, Penghuni, PenghuniForm } from '../api';
-import { Field, selectClass } from '../components';
+import { Field, Modal, selectClass } from '../components';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -80,8 +80,19 @@ export default function PenghuniPage({ notify, presetKamarId, onChanged }: Props
     }
   };
 
+  const [kodeChat, setKodeChat] = useState<{ nama: string; kode: string } | null>(null);
+  const buatKodeChat = async (p: Penghuni) => {
+    try {
+      const { kode } = await api.penghuni.kodeChat(p.id);
+      setKodeChat({ nama: p.nama, kode });
+    } catch (e) {
+      notify((e as Error).message);
+    }
+  };
+
   const keluar = async (p: Penghuni) => {
-    if (!window.confirm(`Catat ${p.nama} keluar dari ${p.kamar_nomor}? Kamar akan menjadi "Kosong".`)) return;
+    const tunggakan = p.tagihan_belum_lunas ? `\n\nPerhatian: masih ada ${p.tagihan_belum_lunas} tagihan belum lunas. Tagihan tetap tercatat setelah keluar.` : '';
+    if (!window.confirm(`Catat ${p.nama} keluar dari ${p.kamar_nomor}? Kamar akan menjadi "Kosong".${tunggakan}`)) return;
     try {
       await api.penghuni.keluar(p.id);
       notify(`${p.nama} keluar. ${p.kamar_nomor} kini "Kosong".`);
@@ -142,7 +153,10 @@ export default function PenghuniPage({ notify, presetKamarId, onChanged }: Props
                     shown.map((p) => (
                       <TableRow key={p.id}>
                         <TableCell>
-                          <div className="font-medium">{p.nama}</div>
+                          <div className="flex items-center gap-1.5 font-medium">
+                            {p.nama}
+                            {p.chat_terhubung === 1 && <Badge variant="outline" className="border-sky-200 bg-sky-50 text-sky-800">Chatbot</Badge>}
+                          </div>
                           <div className="text-xs text-muted-foreground tabular-nums">{p.no_hp}</div>
                         </TableCell>
                         <TableCell>{p.kamar_nomor}</TableCell>
@@ -162,9 +176,14 @@ export default function PenghuniPage({ notify, presetKamarId, onChanged }: Props
                         </TableCell>
                         <TableCell className="text-right">
                           {p.aktif === 1 && (
-                            <Button size="sm" variant="outline" onClick={() => keluar(p)}>
-                              Catat Keluar
-                            </Button>
+                            <div className="flex justify-end gap-2">
+                              <Button size="sm" variant="ghost" onClick={() => buatKodeChat(p)}>
+                                {p.chat_terhubung === 1 ? 'Ganti Chat' : 'Kode Chatbot'}
+                              </Button>
+                              <Button size="sm" variant="outline" onClick={() => keluar(p)}>
+                                Catat Keluar
+                              </Button>
+                            </div>
                           )}
                         </TableCell>
                       </TableRow>
@@ -250,6 +269,15 @@ export default function PenghuniPage({ notify, presetKamarId, onChanged }: Props
           </CardContent>
         </Card>
       </section>
+      {kodeChat && (
+        <Modal title={`Hubungkan chatbot — ${kodeChat.nama}`} onClose={() => { setKodeChat(null); load(); }}>
+          <div className="space-y-3 text-sm">
+            <p>Minta penghuni membuka bot Telegram kos lalu mengirim pesan berikut:</p>
+            <p className="rounded-md border bg-muted/40 p-3 text-center font-mono text-lg tracking-widest">/hubung {kodeChat.kode}</p>
+            <p className="text-muted-foreground">Kode hanya bisa dipakai sekali. Setelah terhubung, penghuni menerima pengingat tagihan dan bisa membayar lewat chat.</p>
+          </div>
+        </Modal>
+      )}
     </>
   );
 }

@@ -16,7 +16,6 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
@@ -31,9 +30,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 const TagihanPage = lazy(() => import('./pages/Tagihan'));
 const KeluhanPage = lazy(() => import('./pages/Keluhan'));
 
-const READY = new Set(['Dashboard', 'Kamar', 'Penghuni', 'Tagihan', 'Keluhan', 'Profil Admin']);
-
-type Nav = { page: string; action?: 'tambah'; kamarId?: number; n: number };
+type Nav = { page: string; action?: 'tambah'; kamarId?: number; q?: string; n: number };
 
 function App() {
   const [nav, setNav] = useState<Nav>({ page: 'Dashboard', n: 0 });
@@ -63,9 +60,8 @@ function App() {
     refreshSummary();
   }, [refreshSummary, nav.n]);
 
-  const go = (page: string, action?: 'tambah', kamarId?: number) => {
-    setNav((prev) => ({ page, action, kamarId, n: prev.n + 1 }));
-    if (!READY.has(page)) notify(`${page} akan dikerjakan pada Sprint berikutnya.`);
+  const go = (page: string, action?: 'tambah', kamarId?: number, q?: string) => {
+    setNav((prev) => ({ page, action, kamarId, q, n: prev.n + 1 }));
   };
 
   const { page } = nav;
@@ -79,21 +75,16 @@ function App() {
           <Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-4" />
           <form
             className="relative w-full max-w-xs"
+            role="search"
             onSubmit={(e) => {
               e.preventDefault();
-              go('Kamar');
+              const q = String(new FormData(e.currentTarget).get('q') ?? '').trim();
+              go('Kamar', undefined, undefined, q);
+              e.currentTarget.reset();
             }}
           >
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search..."
-              aria-label="Cari"
-              className="h-9 pl-8"
-              onFocus={() => {
-                if (page !== 'Kamar') go('Kamar');
-              }}
-            />
+            <Input type="search" name="q" placeholder="Search..." aria-label="Cari kamar atau penghuni" className="h-9 pl-8" />
           </form>
           <Button
             variant="ghost"
@@ -136,7 +127,7 @@ function App() {
 
           {page === 'Dashboard' && (
             <Suspense fallback={<Skeleton className="h-96 rounded-xl" />}>
-              <Dashboard key={nav.n} go={go} notify={notify} />
+              <Dashboard key={nav.n} go={go} notify={notify} onChanged={refreshSummary} />
             </Suspense>
           )}
           {page === 'Kamar' && (
@@ -144,10 +135,11 @@ function App() {
               key={nav.n}
               notify={notify}
               autoOpen={nav.action === 'tambah'}
+              initialQuery={nav.q}
               onDaftarkan={(id) => go('Penghuni', undefined, id)}
             />
           )}
-          {page === 'Penghuni' && <PenghuniPage key={nav.n} notify={notify} presetKamarId={nav.kamarId} />}
+          {page === 'Penghuni' && <PenghuniPage key={nav.n} notify={notify} presetKamarId={nav.kamarId} onChanged={refreshSummary} />}
           {page === 'Tagihan' && (
             <Suspense fallback={<Skeleton className="h-96 rounded-xl" />}>
               <TagihanPage key={nav.n} notify={notify} onChanged={refreshSummary} />
@@ -159,13 +151,6 @@ function App() {
             </Suspense>
           )}
           {page === 'Profil Admin' && <ProfilPage key={nav.n} notify={notify} onProfileChanged={loadAdmin} />}
-          {!READY.has(page) && (
-            <Card>
-              <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                Modul {page} dijadwalkan pada Sprint berikutnya.
-              </CardContent>
-            </Card>
-          )}
         </div>
       </SidebarInset>
       <Toaster />

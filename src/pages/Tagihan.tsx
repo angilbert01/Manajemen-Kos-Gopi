@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-import { Check, CircleAlert, CreditCard, LoaderCircle, MessageCircle, Printer, Receipt, RefreshCw, Search, Trash2, Undo2 } from 'lucide-react';
-import { api, ApiError, namaBulan, rupiah, tanggal, today } from '../api';
-import type { AdminProfile, Pembayaran, RekapTagihan, Tagihan } from '../api';
+import { BellRing, Check, CircleAlert, CreditCard, Link2, LoaderCircle, MessageCircle, Printer, Receipt, RefreshCw, Search, Trash2, Undo2 } from 'lucide-react';
+import { api, ApiError, namaBulan, rupiah, tanggal, today, waLink } from '../api';
+import type { AdminProfile, Pembayaran, PengingatTagihan, RekapTagihan, Tagihan } from '../api';
 import { Field, Modal, selectClass } from '../components';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 
-type Filter = '' | 'Belum Lunas' | 'Dicicil' | 'Lunas';
+type Filter = '' | 'Belum Bayar' | 'Dicicil' | 'Lunas';
 type Props = { notify: (message: string) => void; onChanged: () => void };
 const metodeList = ['Tunai', 'Transfer BCA', 'Transfer Mandiri', 'Transfer BRI', 'Transfer BNI', 'QRIS', 'Lainnya'];
 
@@ -24,7 +24,7 @@ function Status({ tagihan }: { tagihan: Tagihan }) {
       'shrink-0', tagihan.status === 'Lunas' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' :
         tagihan.status_bayar === 'Dicicil' ? 'border-blue-200 bg-blue-50 text-blue-800' : 'border-amber-200 bg-amber-50 text-amber-900',
     )}>
-      {tagihan.status_bayar === 'Belum Bayar' ? 'Belum Lunas' : tagihan.status_bayar}
+      {tagihan.status_bayar}
     </Badge>
   );
 }
@@ -42,6 +42,7 @@ export default function TagihanPage({ notify, onChanged }: Props) {
   const [error, setError] = useState('');
   const [payment, setPayment] = useState<Tagihan | null>(null);
   const [receipt, setReceipt] = useState<Tagihan | null>(null);
+  const [pengingat, setPengingat] = useState<PengingatTagihan[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,10 +52,9 @@ export default function TagihanPage({ notify, onChanged }: Props) {
 
   useEffect(() => {
     let cancelled = false;
+    // Data lama tetap tampil selama memuat ulang agar tidak berkedip saat mengetik pencarian.
     setLoading(true);
     setError('');
-    setRekap(null);
-    setList([]);
     const timer = window.setTimeout(async () => {
       try {
         const [summary, rows] = await Promise.all([
@@ -70,6 +70,20 @@ export default function TagihanPage({ notify, onChanged }: Props) {
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [bulan, status, query, revision]);
 
+  // WBS 5.4: pembayaran online lewat chatbot mengubah status di server; muat ulang berkala agar panel ikut berubah.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') setRevision((n) => n + 1);
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.tagihan.pengingat().then((rows) => { if (!cancelled) setPengingat(rows); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [revision]);
+
   const refresh = () => { setRevision((n) => n + 1); onChanged(); };
   const generate = async () => {
     setBusy(true);
@@ -82,16 +96,25 @@ export default function TagihanPage({ notify, onChanged }: Props) {
   };
 
   const undo = async (tagihan: Tagihan) => {
-    if (!window.confirm('Batalkan seluruh pembayaran ' + tagihan.penghuni_nama + ' untuk ' + namaBulan(tagihan.bulan) + '? Semua catatan pembayaran tagihan ini akan dihapus.')) return;
+    if (!window.confirm('Batalkan seluruh pembayaran ' + tagihan.penghuni_nama + ' untuk ' + namaBulan(tagihan.bulan) + '? Pembayaran ditandai batal; riwayatnya tetap tersimpan.')) return;
     setBusy(true);
     try { await api.tagihan.batal(tagihan.id); notify('Pembayaran dibatalkan. Tagihan kembali Belum Lunas.'); refresh(); }
     catch (err) { notify((err as Error).message); }
     finally { setBusy(false); }
   };
 
+  const pesanWa = (tagihan: Tagihan) =>
+    'Halo ' + tagihan.penghuni_nama + ', pengingat sewa ' + (admin?.nama_kos || 'Kos Gopi') + ' kamar ' + tagihan.kamar_nomor + ' periode ' + namaBulan(tagihan.bulan) + '. Sisa tagihan ' + rupiah(tagihan.sisa) + ', jatuh tempo ' + tanggal(tagihan.jatuh_tempo) + '. Mohon konfirmasi jika sudah membayar. Terima kasih.';
+
+  const salinLinkBayar = async (tagihan: Tagihan) => {
+    try {
+      const link = await api.tagihan.linkBayar(tagihan.id);
+      await navigator.clipboard.writeText(link.payment_url).catch(() => {});
+      notify('Link pembayaran ' + (link.provider === 'simulasi' ? '(simulasi) ' : '') + 'disalin: ' + link.payment_url);
+    } catch (err) { notify((err as Error).message); }
+  };
+
   const actions = (tagihan: Tagihan) => {
-    const phone = tagihan.penghuni_no_hp.replace(/\D/g, '').replace(/^0/, '62');
-    const message = 'Halo ' + tagihan.penghuni_nama + ', pengingat sewa ' + (admin?.nama_kos || 'Kos Gopi') + ' kamar ' + tagihan.kamar_nomor + ' periode ' + namaBulan(tagihan.bulan) + '. Sisa tagihan ' + rupiah(tagihan.sisa) + ', jatuh tempo ' + tanggal(tagihan.jatuh_tempo) + '. Mohon konfirmasi jika sudah membayar. Terima kasih.';
     return (
       <div className="flex flex-wrap gap-2">
         {tagihan.status !== 'Lunas' && <>
@@ -99,9 +122,12 @@ export default function TagihanPage({ notify, onChanged }: Props) {
             <CreditCard /> {tagihan.status_bayar === 'Dicicil' ? 'Lanjut Bayar' : 'Catat Bayar'}
           </Button>
           <Button size="sm" variant="outline" asChild>
-            <a href={'https://wa.me/' + phone + '?text=' + encodeURIComponent(message)} target="_blank" rel="noopener noreferrer" aria-label={'Siapkan pengingat WhatsApp untuk ' + tagihan.penghuni_nama}>
+            <a href={waLink(tagihan.penghuni_no_hp, pesanWa(tagihan))} target="_blank" rel="noopener noreferrer" aria-label={'Siapkan pengingat WhatsApp untuk ' + tagihan.penghuni_nama}>
               <MessageCircle /> <span className="md:sr-only">WhatsApp</span>
             </a>
+          </Button>
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => salinLinkBayar(tagihan)} aria-label={'Salin link pembayaran online untuk ' + tagihan.penghuni_nama}>
+            <Link2 /> <span className="md:sr-only">Link Bayar</span>
           </Button>
         </>}
         {tagihan.terbayar > 0 && <Button size="sm" variant="outline" onClick={() => setReceipt(tagihan)}><Receipt /> Kuitansi</Button>}
@@ -111,10 +137,11 @@ export default function TagihanPage({ notify, onChanged }: Props) {
   };
   const collected = rekap?.nominal_lunas ?? 0;
   const total = rekap?.total_nominal ?? 0;
-  const percentage = total ? Math.round(collected / total * 100) : 0;
+  // floor: jangan tampil 100% selama masih ada sisa.
+  const percentage = total ? Math.floor(collected / total * 100) : 0;
   const filters: { value: Filter; label: string; count?: number }[] = [
     { value: '', label: 'Semua', count: rekap?.total_tagihan },
-    { value: 'Belum Lunas', label: 'Belum Lunas', count: rekap?.total_belum_lunas },
+    { value: 'Belum Bayar', label: 'Belum Bayar', count: rekap ? rekap.total_belum_lunas - (rekap.total_dicicil ?? 0) : undefined },
     { value: 'Dicicil', label: 'Dicicil', count: rekap?.total_dicicil },
     { value: 'Lunas', label: 'Lunas', count: rekap?.total_lunas },
   ];
@@ -130,7 +157,7 @@ export default function TagihanPage({ notify, onChanged }: Props) {
             </div>
             <div className="flex flex-wrap items-end gap-2">
               <Field label="Periode tagihan">
-                <Input type="month" value={bulan} onChange={(e) => { if (/^(?!0000)[0-9]{4}-(0[1-9]|1[0-2])$/.test(e.target.value)) setBulan(e.target.value); }} className="w-44" />
+                <Input type="month" value={bulan} max={today().slice(0, 7)} onChange={(e) => { if (/^(?!0000)[0-9]{4}-(0[1-9]|1[0-2])$/.test(e.target.value)) setBulan(e.target.value); }} className="w-44" />
               </Field>
               <Button disabled={busy} onClick={generate}>
                 <RefreshCw className={busy ? 'animate-spin' : ''} /> {busy ? 'Memproses…' : 'Buat Tagihan'}
@@ -157,6 +184,32 @@ export default function TagihanPage({ notify, onChanged }: Props) {
         </CardContent>
       </Card>
 
+      {pengingat.length > 0 && <Card className="border-amber-200"><CardContent className="space-y-3 px-4">
+        <div className="flex items-center gap-2">
+          <BellRing className="size-4 text-amber-700" aria-hidden />
+          <h2 className="font-semibold">Perlu diingatkan hari ini ({pengingat.length})</h2>
+        </div>
+        <p className="text-sm text-muted-foreground">Tagihan jatuh tempo 3 hari lagi (H-3), hari ini (H-0), atau sudah terlambat. Kirim pengingat lewat WhatsApp.</p>
+        <ul className="divide-y">
+          {pengingat.map((t) => <li key={t.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+            <div className="min-w-0">
+              <p className="truncate font-medium">{t.penghuni_nama} <span className="font-normal text-muted-foreground">· {t.kamar_nomor} · {namaBulan(t.bulan)}</span></p>
+              <p className="text-sm text-muted-foreground">Sisa <span className="font-medium text-foreground tabular-nums">{rupiah(t.sisa)}</span> · jatuh tempo {tanggal(t.jatuh_tempo)}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className={t.pengingat === 'Terlambat' ? 'border-red-200 bg-red-50 text-red-800' : 'border-amber-200 bg-amber-50 text-amber-900'}>
+                {t.pengingat === 'Terlambat' ? `Terlambat ${-t.hari} hari` : t.pengingat === 'H-0' ? 'Jatuh tempo hari ini' : 'H-3'}
+              </Badge>
+              <Button size="sm" variant="outline" asChild>
+                <a href={waLink(t.penghuni_no_hp, pesanWa(t))} target="_blank" rel="noopener noreferrer" aria-label={'Kirim pengingat WhatsApp ke ' + t.penghuni_nama}>
+                  <MessageCircle /> WhatsApp
+                </a>
+              </Button>
+            </div>
+          </li>)}
+        </ul>
+      </CardContent></Card>}
+
       <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
         <div className="flex flex-wrap gap-1" role="group" aria-label="Filter status tagihan">
           {filters.map((filter) => <Button key={filter.value} size="sm" variant={status === filter.value ? 'default' : 'outline'} aria-pressed={status === filter.value} onClick={() => setStatus(filter.value)}>
@@ -170,7 +223,7 @@ export default function TagihanPage({ notify, onChanged }: Props) {
       </div>
 
       {error ? <Alert variant="destructive"><CircleAlert /><AlertDescription>{error} <Button size="sm" variant="outline" onClick={() => setRevision((n) => n + 1)}>Coba lagi</Button></AlertDescription></Alert> :
-        loading ? <div className="space-y-3" role="status" aria-label="Memuat tagihan"><Skeleton className="h-24" /><Skeleton className="h-24" /></div> :
+        loading && !rekap ? <div className="space-y-3" role="status" aria-label="Memuat tagihan"><Skeleton className="h-24" /><Skeleton className="h-24" /></div> :
           !list.length ? <Card><CardContent className="py-10 text-center">
             <Receipt className="mx-auto mb-3 size-8 text-muted-foreground" />
             <p className="font-medium">{query || status ? 'Tidak ada tagihan yang cocok' : 'Belum ada tagihan pada periode ini'}</p>

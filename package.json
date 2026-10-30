@@ -9,8 +9,8 @@
   "scripts": {
     "dev": "concurrently -n api,web -c green,cyan \"npm:dev:api\" \"npm:dev:web\"",
     "dev:web": "vite",
-    "dev:api": "node --disable-warning=ExperimentalWarning --watch server/index.ts",
-    "start:api": "node --disable-warning=ExperimentalWarning server/index.ts",
+    "dev:api": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env --watch server/index.ts",
+    "start:api": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env server/index.ts",
     "db:seed": "node --disable-warning=ExperimentalWarning server/seed.ts",
     "test:api": "node --disable-warning=ExperimentalWarning --test \"server/**/*.test.ts\"",
     "test:web": "node --disable-warning=ExperimentalWarning --test \"src/**/*.test.ts\"",
