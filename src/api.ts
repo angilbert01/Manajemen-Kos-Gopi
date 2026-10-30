@@ -207,7 +207,7 @@ export const api = {
   },
   tagihan: {
     list: (f: { bulan?: string; status?: string; q?: string } = {}) => request<Tagihan[]>('GET', `/tagihan${qs(f)}`),
-    rekap: (bulan?: string) => request<RekapTagihan>('GET', `/tagihan/rekap${bulan ? `?bulan=${bulan}` : ''}`),
+    rekap: (bulan?: string) => request<RekapTagihan>('GET', `/tagihan/rekap${qs({ bulan })}`),
     generate: (bulan?: string) => request<GenerateTagihanResult>('POST', '/tagihan/generate', { bulan }),
     lunas: (id: number, payload: LunasPayload = {}) => request<Tagihan>('PATCH', `/tagihan/${id}/lunas`, payload),
     batal: (id: number) => request<Tagihan>('PATCH', `/tagihan/${id}/batal`, {}),

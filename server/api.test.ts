@@ -10,7 +10,8 @@ import type { AddressInfo } from 'node:net';
 const dir = mkdtempSync(join(tmpdir(), 'kos-gopi-'));
 process.env.DB_PATH = join(dir, 'test.db');
 const { migrate, db } = await import('./db.ts');
-const { createApp } = await import('./app.ts');
+const { createApp, generateTagihanBulan, hitungJatuhTempo } = await import('./app.ts');
+const { tanggalJakarta } = await import('./dates.ts');
 
 let server: Server;
 let base = '';
@@ -78,12 +79,15 @@ test('TC-07 filter katalog status Kosong hanya menampilkan kamar kosong', async 
   assert.ok(r.body.every((k: { status: string }) => k.status === 'Kosong'));
 });
 
-test('kamar Terisi tidak bisa dihapus; penghuni keluar -> kamar Kosong & bisa dihapus', async () => {
+test('kamar Terisi tidak bisa dihapus; setelah keluar riwayat tagihan tetap dilindungi', async () => {
   assert.equal((await call('DELETE', `/kamar/${kamarId}`)).status, 409);
   const p = (await call('GET', '/penghuni')).body[0];
   assert.equal((await call('PATCH', `/penghuni/${p.id}/keluar`, {})).status, 200);
   assert.equal((await call('GET', `/kamar/${kamarId}`)).body.status, 'Kosong');
-  assert.equal((await call('DELETE', `/kamar/${kamarId}`)).status, 204);
+  assert.equal((await call('DELETE', `/kamar/${kamarId}`)).status, 409);
+  assert.ok((await call('GET', '/penghuni?semua=1')).body.some((row: { id: number }) => row.id === p.id));
+  const empty = await call('POST', '/kamar', { nomor: 'TANPA-RIWAYAT', tipe: 'AC', harga: 1000000 });
+  assert.equal((await call('DELETE', `/kamar/${empty.body.id}`)).status, 204);
 });
 
 test('CRUD profil admin (get aktif, tambah, ubah, aktifkan, hapus)', async () => {
@@ -320,4 +324,103 @@ test('TC-Cicilan-05: Bayar langsung 1 bulan (PATCH /lunas) = 1 pembayaran sebesa
   assert.equal(r1.body.status, 'Lunas');
   assert.equal(r1.body.terbayar, 1500000);
   assert.equal(r1.body.jumlah_pembayaran, 2);
+});
+
+test('Sprint 3: tagihan periode berikutnya memakai harga saat dibuat dan tidak mengubah riwayat', async () => {
+  const generated = generateTagihanBulan('2026-11');
+  const first = generated.tagihan.find((row) => row.penghuni_id === tPenghuni1Id)!;
+  assert.equal(first.nominal, 1500000);
+  assert.equal(first.jatuh_tempo, '2026-11-10');
+  const update = await call('PUT', `/kamar/${first.kamar_id}`, { nomor: 'B01', tipe: 'VIP', harga: 1700000 });
+  assert.equal(update.status, 200);
+  assert.equal(generateTagihanBulan('2026-11').dibuat, 0);
+  assert.equal((await call('GET', `/tagihan/${first.id}`)).body.nominal, 1500000);
+  const next = generateTagihanBulan('2026-12').tagihan.find((row) => row.penghuni_id === tPenghuni1Id)!;
+  assert.equal(next.nominal, 1700000);
+  assert.equal((await call('GET', `/tagihan/${tagihan1Id}`)).body.nominal, 1500000);
+});
+
+test('Sprint 3: registrasi lama menyiapkan tagihan berjalan dan tidak membuat tagihan sebelum masuk', async () => {
+  const kamar = await call('POST', '/kamar', { nomor: 'AUTO', tipe: 'Standar', harga: 800000 });
+  const penghuni = await call('POST', '/penghuni', {
+    nama: 'Penghuni Lama', no_hp: '081234567890', kamar_id: kamar.body.id, tanggal_masuk: '2020-01-31',
+  });
+  assert.equal(penghuni.status, 201);
+  const current = await call('GET', `/tagihan?bulan=${tanggalJakarta().slice(0, 7)}`);
+  assert.ok(current.body.some((row: { penghuni_id: number }) => row.penghuni_id === penghuni.body.id));
+  generateTagihanBulan('2019-12');
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM tagihan WHERE penghuni_id = ? AND bulan = '2019-12'").get(penghuni.body.id)!.n, 0);
+  assert.equal(hitungJatuhTempo('2020-01-31', '2027-02'), '2027-02-28');
+  assert.equal(hitungJatuhTempo('2020-01-31', '2028-02'), '2028-02-29');
+  assert.equal(hitungJatuhTempo('2020-01-31', '2026-04'), '2026-04-30');
+});
+
+test('Sprint 3: pendaftaran penghuni dan tagihannya rollback bersama jika penyimpanan tagihan gagal', async (t) => {
+  const kamar = await call('POST', '/kamar', { nomor: 'ROLLBACK', tipe: 'AC', harga: 1100000 });
+  db.exec(`CREATE TEMP TRIGGER test_gagal_tagihan BEFORE INSERT ON tagihan
+    WHEN (SELECT nama FROM penghuni WHERE id = NEW.penghuni_id) = 'Uji Rollback'
+    BEGIN SELECT RAISE(ABORT, 'TEST_BILL_FAILURE'); END;`);
+  t.mock.method(console, 'error', () => {});
+  try {
+    const result = await call('POST', '/penghuni', {
+      nama: 'Uji Rollback', no_hp: '081234567890', kamar_id: kamar.body.id, tanggal_masuk: '2026-10-10',
+    });
+    assert.equal(result.status, 500);
+    assert.equal((await call('GET', `/kamar/${kamar.body.id}`)).body.status, 'Kosong');
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM penghuni WHERE nama = 'Uji Rollback'").get()!.n, 0);
+  } finally { db.exec('DROP TRIGGER test_gagal_tagihan'); }
+});
+
+test('Sprint 3: parameter periode, nominal, dan tanggal kalender yang tidak valid ditolak', async () => {
+  for (const bulan of ['2026-13', '2026-00', '0000-01', '2026-1', 202610, null, {}]) {
+    assert.equal((await call('POST', '/tagihan/generate', { bulan })).status, 422, JSON.stringify(bulan));
+  }
+  assert.equal((await call('GET', '/tagihan?bulan=2026-99')).status, 422);
+  assert.equal((await call('GET', '/tagihan/rekap?bulan=2026-99')).status, 422);
+  assert.equal((await call('GET', '/tagihan?bulan=2026-10&bulan=2026-11')).status, 422);
+  assert.equal((await call('GET', '/tagihan?status=TidakValid')).status, 422);
+  const bill = generateTagihanBulan('2027-01').tagihan.find((row) => row.penghuni_id === tPenghuni1Id)!;
+  for (const date of ['2027-02-29', '2026-04-31', null, 20261010]) {
+    assert.equal((await call('PATCH', `/tagihan/${bill.id}/lunas`, { tanggal_bayar: date })).status, 422);
+  }
+  for (const jumlah of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, true, [1], {}]) {
+    assert.equal((await call('POST', `/tagihan/${bill.id}/pembayaran`, { jumlah })).status, 422);
+  }
+  assert.equal((await call('GET', `/tagihan/${bill.id}/pembayaran`)).body.length, 0);
+});
+
+test('Sprint 3: request pembayaran bersamaan tidak boleh melebihi nominal tagihan', async () => {
+  const bill = generateTagihanBulan('2027-02').tagihan.find((row) => row.penghuni_id === tPenghuni2Id)!;
+  const results = await Promise.all([
+    call('POST', `/tagihan/${bill.id}/pembayaran`, { jumlah: 600000 }),
+    call('POST', `/tagihan/${bill.id}/pembayaran`, { jumlah: 600000 }),
+  ]);
+  assert.deepEqual(results.map((result) => result.status).sort(), [201, 422]);
+  const updated = (await call('GET', `/tagihan/${bill.id}`)).body;
+  assert.equal(updated.terbayar, 600000);
+  assert.equal(updated.sisa, 300000);
+  assert.throws(() => db.prepare('INSERT INTO pembayaran (tagihan_id, jumlah, tanggal_bayar) VALUES (?, ?, ?)')
+    .run(bill.id as number, 400000, '2027-02-15'), /PEMBAYARAN_MELEBIHI_SISA/);
+  assert.equal((await call('GET', `/tagihan/${bill.id}/pembayaran`)).body.length, 1);
+});
+
+test('Sprint 3: tagihan berbayar dan kamar terkait tidak boleh menghapus riwayat keuangan', async () => {
+  const before = (await call('GET', `/tagihan/${tagihan1Id}/pembayaran`)).body;
+  assert.equal((await call('DELETE', `/tagihan/${tagihan1Id}`)).status, 409);
+  assert.equal((await call('PATCH', `/penghuni/${tPenghuni1Id}/keluar`)).status, 200);
+  const bill = (await call('GET', `/tagihan/${tagihan1Id}`)).body;
+  assert.equal((await call('DELETE', `/kamar/${bill.kamar_id}`)).status, 409);
+  assert.deepEqual((await call('GET', `/tagihan/${tagihan1Id}/pembayaran`)).body, before);
+  assert.equal((await call('GET', `/tagihan/${tagihan1Id}`)).body.status, 'Lunas');
+});
+
+test('Sprint 3: rekap dan dashboard konsisten dengan pembayaran aktual serta sisa', async () => {
+  const bulan = tanggalJakarta().slice(0, 7);
+  const summary = (await call('GET', `/tagihan/rekap?bulan=${bulan}`)).body;
+  const dashboard = (await call('GET', '/ringkasan')).body;
+  assert.equal(summary.total_nominal, summary.nominal_lunas + summary.nominal_belum_lunas);
+  assert.equal(dashboard.tagihan_bulan, bulan);
+  assert.equal(dashboard.tagihan_nominal_lunas, summary.nominal_lunas);
+  assert.equal(dashboard.tagihan_nominal_belum_lunas, summary.nominal_belum_lunas);
+  assert.equal(dashboard.tagihan_belum_lunas, summary.total_belum_lunas);
 });

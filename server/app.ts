@@ -1,6 +1,7 @@
 import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import { db, migrate, transaction } from './db.ts';
+import { tanggalJakarta } from './dates.ts';
 import {
   validateAdmin,
   validateGenerateTagihan,
@@ -183,6 +184,10 @@ function mapDbError(err: unknown): never {
     throw new HttpError(409, 'Kamar sudah terisi.', { kamar_id: 'Kamar sudah terisi, pilih kamar lain.' });
   if (msg.includes('FOREIGN KEY constraint failed'))
     throw new HttpError(409, 'Data masih dipakai oleh data lain.');
+  if (msg.includes('TAGIHAN_SUDAH_DIBAYAR'))
+    throw new HttpError(409, 'Tagihan yang memiliki pembayaran tidak boleh dihapus.');
+  if (msg.includes('PEMBAYARAN_MELEBIHI_SISA'))
+    throw new HttpError(409, 'Sisa tagihan telah berubah. Muat ulang sebelum mencatat pembayaran.');
   throw err;
 }
 
@@ -205,8 +210,7 @@ export function createApp() {
     const { total_penghuni } = db.prepare('SELECT COUNT(*) AS total_penghuni FROM penghuni WHERE aktif = 1').get() as {
       total_penghuni: number;
     };
-    const d = new Date();
-    const currentBulan = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const currentBulan = tanggalJakarta().slice(0, 7);
     const tagihanRekap = db.prepare(REKAP_SELECT).get(currentBulan) as Row;
 
     res.json({
@@ -342,10 +346,11 @@ export function createApp() {
   app.delete('/api/kamar/:id', (req, res) => {
     const id = idParam(req);
     if (!getKamar(id)) throw new HttpError(404, 'Kamar tidak ditemukan.');
+    if (db.prepare('SELECT 1 FROM tagihan WHERE kamar_id = ? LIMIT 1').get(id))
+      throw new HttpError(409, 'Kamar memiliki riwayat tagihan dan tidak boleh dihapus.');
     try {
       transaction(() => {
-        // Tagihan & riwayat penghuni non-aktif kamar ini ikut dibersihkan.
-        db.prepare('DELETE FROM tagihan WHERE kamar_id = ?').run(id);
+        // Riwayat keuangan tetap disimpan; hanya kamar tanpa tagihan dapat dihapus.
         db.prepare('DELETE FROM penghuni WHERE kamar_id = ? AND aktif = 0').run(id);
         db.prepare('DELETE FROM kamar WHERE id = ?').run(id);
       });
@@ -373,22 +378,21 @@ export function createApp() {
       throw new HttpError(409, 'Kamar sudah terisi.', { kamar_id: 'Kamar sudah terisi, pilih kamar lain.' });
     try {
       // Trigger trg_penghuni_masuk otomatis mengubah status kamar menjadi "Terisi".
-      const r = db.prepare('INSERT INTO penghuni (nama, no_hp, kamar_id, tanggal_masuk) VALUES (?, ?, ?, ?)')
-        .run(data.nama, data.no_hp, data.kamar_id, data.tanggal_masuk);
-
-      // WBS 2.1: Otomatis buat tagihan bulan berjalan untuk penghuni baru
-      const targetBulan = data.tanggal_masuk.slice(0, 7);
-      const jatuhTempo = hitungJatuhTempo(data.tanggal_masuk, targetBulan);
-      try {
-        db.prepare(`
-          INSERT OR IGNORE INTO tagihan (penghuni_id, kamar_id, bulan, nominal, status, jatuh_tempo)
-          VALUES (?, ?, ?, ?, 'Belum Lunas', ?)
-        `).run(r.lastInsertRowid, data.kamar_id, targetBulan, kamar.harga as number, jatuhTempo);
-      } catch {
-        // Abaikan jika sudah ada
-      }
-
-      res.status(201).json(getPenghuni(r.lastInsertRowid));
+      const id = transaction(() => {
+        const r = db.prepare('INSERT INTO penghuni (nama, no_hp, kamar_id, tanggal_masuk) VALUES (?, ?, ?, ?)')
+          .run(data.nama, data.no_hp, data.kamar_id, data.tanggal_masuk);
+        const bulanMasuk = data.tanggal_masuk.slice(0, 7);
+        const bulanBerjalan = tanggalJakarta().slice(0, 7);
+        // Penghuni lama yang baru dicatat tetap mendapat tagihan periode berjalan.
+        for (const bulan of new Set([bulanMasuk, bulanBerjalan].filter((b) => b >= bulanMasuk))) {
+          db.prepare(`
+            INSERT INTO tagihan (penghuni_id, kamar_id, bulan, nominal, status, jatuh_tempo)
+            VALUES (?, ?, ?, ?, 'Belum Lunas', ?)
+          `).run(r.lastInsertRowid, data.kamar_id, bulan, kamar.harga as number, hitungJatuhTempo(data.tanggal_masuk, bulan));
+        }
+        return r.lastInsertRowid;
+      });
+      res.status(201).json(getPenghuni(id));
     } catch (err) { mapDbError(err); }
   });
 
@@ -398,7 +402,7 @@ export function createApp() {
     if (!p) throw new HttpError(404, 'Penghuni tidak ditemukan.');
     if (p.aktif !== 1) throw new HttpError(409, 'Penghuni sudah tidak aktif.');
     const tanggal = typeof req.body?.tanggal_keluar === 'string' && req.body.tanggal_keluar
-      ? req.body.tanggal_keluar : new Date().toISOString().slice(0, 10);
+      ? req.body.tanggal_keluar : tanggalJakarta();
     // Trigger trg_penghuni_keluar otomatis mengubah status kamar menjadi "Kosong".
     db.prepare('UPDATE penghuni SET aktif = 0, tanggal_keluar = ? WHERE id = ?').run(tanggal, id);
     res.json(getPenghuni(id));
@@ -416,6 +420,12 @@ export function createApp() {
     const where: string[] = [];
     const params: (string | number)[] = [];
     const { bulan, status, q } = req.query;
+    if (bulan !== undefined) {
+      const result = validateGenerateTagihan({ bulan });
+      if (!result.data) throw new HttpError(422, 'Parameter bulan tidak valid.', result.errors);
+    }
+    if (status !== undefined && !['', 'Lunas', 'Belum Lunas', 'Dicicil'].includes(status as string))
+      throw new HttpError(422, 'Status tagihan tidak valid.');
     if (typeof bulan === 'string' && bulan.trim()) {
       where.push('t.bulan = ?');
       params.push(bulan.trim());
@@ -437,11 +447,9 @@ export function createApp() {
   });
 
   app.get('/api/tagihan/rekap', (req, res) => {
-    let bulan = typeof req.query.bulan === 'string' && req.query.bulan.trim() ? req.query.bulan.trim() : '';
-    if (!bulan) {
-      const d = new Date();
-      bulan = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    }
+    const { data, errors } = validateGenerateTagihan({ bulan: req.query.bulan });
+    if (!data) throw new HttpError(422, 'Parameter bulan tidak valid.', errors);
+    const { bulan } = data;
 
     const totals = db.prepare(REKAP_SELECT).get(bulan) as Row;
 
@@ -494,13 +502,15 @@ export function createApp() {
     const { data, errors } = validateLunas(req.body ?? {});
     if (!data) throw new HttpError(422, 'Data konfirmasi pembayaran tidak valid.', errors);
 
-    transaction(() => {
-      db.prepare(
-        'INSERT INTO pembayaran (tagihan_id, jumlah, tanggal_bayar, metode_pembayaran, catatan) VALUES (?, ?, ?, ?, ?)',
-      ).run(id, row.sisa as number, data.tanggal_bayar, data.metode_pembayaran, data.catatan ?? null);
-      if (data.catatan) db.prepare('UPDATE tagihan SET catatan = ? WHERE id = ?').run(data.catatan, id);
-      syncStatusTagihan(id);
-    });
+    try {
+      transaction(() => {
+        db.prepare(
+          'INSERT INTO pembayaran (tagihan_id, jumlah, tanggal_bayar, metode_pembayaran, catatan) VALUES (?, ?, ?, ?, ?)',
+        ).run(id, row.sisa as number, data.tanggal_bayar, data.metode_pembayaran, data.catatan ?? null);
+        if (data.catatan) db.prepare('UPDATE tagihan SET catatan = ? WHERE id = ?').run(data.catatan, id);
+        syncStatusTagihan(id);
+      });
+    } catch (err) { mapDbError(err); }
 
     res.json(getTagihan(id));
   });
@@ -540,12 +550,14 @@ export function createApp() {
       throw new HttpError(422, msg, { jumlah: msg });
     }
 
-    transaction(() => {
-      db.prepare(
-        'INSERT INTO pembayaran (tagihan_id, jumlah, tanggal_bayar, metode_pembayaran, catatan) VALUES (?, ?, ?, ?, ?)',
-      ).run(id, data.jumlah, data.tanggal_bayar, data.metode_pembayaran, data.catatan ?? null);
-      syncStatusTagihan(id);
-    });
+    try {
+      transaction(() => {
+        db.prepare(
+          'INSERT INTO pembayaran (tagihan_id, jumlah, tanggal_bayar, metode_pembayaran, catatan) VALUES (?, ?, ?, ?, ?)',
+        ).run(id, data.jumlah, data.tanggal_bayar, data.metode_pembayaran, data.catatan ?? null);
+        syncStatusTagihan(id);
+      });
+    } catch (err) { mapDbError(err); }
 
     res.status(201).json(getTagihan(id));
   });
@@ -568,7 +580,8 @@ export function createApp() {
     const id = idParam(req);
     const row = getTagihan(id) as Row | undefined;
     if (!row) throw new HttpError(404, 'Tagihan tidak ditemukan.');
-    db.prepare('DELETE FROM tagihan WHERE id = ?').run(id);
+    try { db.prepare('DELETE FROM tagihan WHERE id = ?').run(id); }
+    catch (err) { mapDbError(err); }
     res.status(204).end();
   });
 

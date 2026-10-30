@@ -186,9 +186,27 @@ export default function Dashboard({ go, notify }: Props) {
           format={rupiah}
           hint={`Dari potensi ${rupiah(potensi)}`}
           progress={revPct}
-          progressLabel="Realisasi sewa"
+          progressLabel="Potensi sewa terisi"
         />
       </div>
+
+      <Card>
+        <CardHeader className="gap-3">
+          <CardTitle>Rekap Pembayaran {r?.tagihan_bulan ? new Date(`${r.tagihan_bulan}-01T00:00:00`).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' }) : 'Bulan Ini'}</CardTitle>
+          <CardDescription>Pembayaran aktual untuk tagihan periode ini, termasuk cicilan.</CardDescription>
+          <CardAction><Button variant="outline" size="sm" onClick={() => go('Tagihan')}>Kelola Tagihan</Button></CardAction>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-3">
+          {[
+            { label: 'Total ditagihkan', value: r?.tagihan_total_nominal },
+            { label: 'Pembayaran diterima', value: r?.tagihan_nominal_lunas },
+            { label: 'Sisa belum lunas', value: r?.tagihan_nominal_belum_lunas },
+          ].map((item) => <div key={item.label} className="min-w-0 rounded-lg border bg-muted/30 p-3">
+            <p className="text-xs text-muted-foreground">{item.label}</p>
+            <p className="mt-1 break-all text-lg font-semibold tabular-nums">{item.value === undefined ? '—' : rupiah(item.value)}</p>
+          </div>)}
+        </CardContent>
+      </Card>
 
       {/* Grafik: tingkat hunian + tren penghuni masuk 6 bulan */}
       <div className="grid gap-4 lg:grid-cols-3">

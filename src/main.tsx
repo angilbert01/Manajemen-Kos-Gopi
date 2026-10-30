@@ -4,7 +4,7 @@ import { Bell, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import './index.css';
 import { api } from './api';
-import type { AdminProfile } from './api';
+import type { AdminProfile, Ringkasan } from './api';
 import { AppSidebar } from './app-sidebar';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -28,14 +28,16 @@ import ProfilPage from './pages/Profil';
 
 // Dashboard (berisi Recharts) dimuat terpisah agar halaman lain tidak ikut menanggung bobot grafik.
 const Dashboard = lazy(() => import('./pages/Dashboard'));
+const TagihanPage = lazy(() => import('./pages/Tagihan'));
 
-const READY = new Set(['Dashboard', 'Kamar', 'Penghuni', 'Profil Admin']);
+const READY = new Set(['Dashboard', 'Kamar', 'Penghuni', 'Tagihan', 'Profil Admin']);
 
 type Nav = { page: string; action?: 'tambah'; kamarId?: number; n: number };
 
 function App() {
   const [nav, setNav] = useState<Nav>({ page: 'Dashboard', n: 0 });
   const [admin, setAdmin] = useState<AdminProfile | null>(null);
+  const [ringkasan, setRingkasan] = useState<Ringkasan | null>(null);
 
   const notify = useCallback((message: string) => {
     toast(message);
@@ -51,6 +53,14 @@ function App() {
   useEffect(() => {
     loadAdmin();
   }, [loadAdmin]);
+
+  const refreshSummary = useCallback(() => {
+    api.ringkasan().then(setRingkasan).catch(() => setRingkasan(null));
+  }, []);
+
+  useEffect(() => {
+    refreshSummary();
+  }, [refreshSummary, nav.n]);
 
   const go = (page: string, action?: 'tambah', kamarId?: number) => {
     setNav((prev) => ({ page, action, kamarId, n: prev.n + 1 }));
@@ -88,11 +98,11 @@ function App() {
             variant="ghost"
             size="icon"
             className="relative ml-auto"
-            onClick={() => notify('4 tagihan belum dibayar bulan ini.')}
-            aria-label="Notifikasi"
+            onClick={() => go('Tagihan')}
+            aria-label={`Buka tagihan bulan ini${ringkasan ? `, ${ringkasan.tagihan_belum_lunas ?? 0} belum lunas` : ''}`}
           >
             <Bell />
-            <Badge className="absolute -top-0.5 -right-0.5 h-4 min-w-4 rounded-full px-1 text-[10px] tabular-nums">4</Badge>
+            {!!ringkasan?.tagihan_belum_lunas && <Badge className="absolute -top-0.5 -right-0.5 h-4 min-w-4 rounded-full px-1 text-[10px] tabular-nums">{ringkasan.tagihan_belum_lunas}</Badge>}
           </Button>
         </header>
 
@@ -137,6 +147,11 @@ function App() {
             />
           )}
           {page === 'Penghuni' && <PenghuniPage key={nav.n} notify={notify} presetKamarId={nav.kamarId} />}
+          {page === 'Tagihan' && (
+            <Suspense fallback={<Skeleton className="h-96 rounded-xl" />}>
+              <TagihanPage key={nav.n} notify={notify} onChanged={refreshSummary} />
+            </Suspense>
+          )}
           {page === 'Profil Admin' && <ProfilPage key={nav.n} notify={notify} onProfileChanged={loadAdmin} />}
           {!READY.has(page) && (
             <Card>

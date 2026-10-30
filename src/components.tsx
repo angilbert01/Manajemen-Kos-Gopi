@@ -112,6 +112,7 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent
+        aria-describedby={undefined}
         className="max-h-[90vh] overflow-y-auto sm:max-w-lg"
         onCloseAutoFocus={(e) => {
           e.preventDefault();

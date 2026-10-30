@@ -1,4 +1,5 @@
 // Validasi input sesuai acceptance criteria EP-01 (lihat Konteks/Dokumen BA & QA Sprint 1).
+import { isIsoDate, tanggalJakarta } from './dates.ts';
 
 export type Errors = Record<string, string>;
 
@@ -15,7 +16,9 @@ export interface AdminInput {
 }
 
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
-const isIsoDate = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v));
+const positiveInteger = (value: unknown) =>
+  (typeof value === 'number' || (typeof value === 'string' && value.trim() !== '')) &&
+  Number.isSafeInteger(Number(value)) && Number(value) > 0;
 
 /** Normalisasi no HP: buang spasi/strip/titik. Format valid: 08xx / 628xx / +628xx, 10–15 digit. */
 export const normalizePhone = (v: string) => v.replace(/[\s.-]/g, '');
@@ -32,7 +35,7 @@ export function validateKamar(body: Record<string, unknown>): { data?: KamarInpu
   else if (nomor.length > 20) errors.nomor = 'Nomor kamar maksimal 20 karakter.';
   if (!tipe) errors.tipe = 'Tipe kamar wajib diisi.';
   if (body.harga === undefined || body.harga === null || body.harga === '') errors.harga = 'Harga wajib diisi.';
-  else if (!Number.isInteger(harga) || harga <= 0) errors.harga = 'Harga harus bilangan bulat lebih dari 0.';
+  else if (!positiveInteger(body.harga)) errors.harga = 'Harga harus bilangan bulat lebih dari 0.';
   if (foto && !/^https?:\/\//i.test(foto)) errors.foto_url = 'URL foto harus diawali http:// atau https://';
   if (Object.keys(errors).length) return { errors };
   return { data: { nomor, tipe, harga, foto_url: foto || null } };
@@ -86,15 +89,12 @@ export interface LunasInput {
   catatan?: string;
 }
 
-const BULAN_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+const BULAN_RE = /^(?!0000)[0-9]{4}-(0[1-9]|1[0-2])$/;
 
 export function validateGenerateTagihan(body: Record<string, unknown>): { data?: GenerateTagihanInput; errors?: Errors } {
   const errors: Errors = {};
-  let bulan = str(body.bulan);
-  if (!bulan) {
-    const d = new Date();
-    bulan = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-  } else if (!BULAN_RE.test(bulan)) {
+  const bulan = body.bulan === undefined || body.bulan === '' ? tanggalJakarta().slice(0, 7) : str(body.bulan);
+  if (!BULAN_RE.test(bulan)) {
     errors.bulan = 'Format bulan harus YYYY-MM (contoh: 2026-10).';
   }
   if (Object.keys(errors).length) return { errors };
@@ -103,15 +103,17 @@ export function validateGenerateTagihan(body: Record<string, unknown>): { data?:
 
 export function validateLunas(body: Record<string, unknown>): { data?: LunasInput; errors?: Errors } {
   const errors: Errors = {};
-  let tanggal_bayar = str(body.tanggal_bayar);
-  if (!tanggal_bayar) {
-    const d = new Date();
-    tanggal_bayar = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  } else if (!isIsoDate(tanggal_bayar)) {
+  const tanggal_bayar = body.tanggal_bayar === undefined || body.tanggal_bayar === '' ? tanggalJakarta() : str(body.tanggal_bayar);
+  if (!isIsoDate(tanggal_bayar)) {
     errors.tanggal_bayar = 'Format tanggal bayar harus YYYY-MM-DD.';
   }
   const metode = str(body.metode_pembayaran) || 'Tunai';
   const catatan = str(body.catatan);
+  if (body.metode_pembayaran !== undefined && typeof body.metode_pembayaran !== 'string')
+    errors.metode_pembayaran = 'Metode pembayaran harus berupa teks.';
+  else if (metode.length > 100) errors.metode_pembayaran = 'Metode pembayaran maksimal 100 karakter.';
+  if (body.catatan !== undefined && typeof body.catatan !== 'string') errors.catatan = 'Catatan harus berupa teks.';
+  else if (catatan.length > 500) errors.catatan = 'Catatan maksimal 500 karakter.';
 
   if (Object.keys(errors).length) return { errors };
   return { data: { tanggal_bayar, metode_pembayaran: metode, catatan: catatan || undefined } };
@@ -126,7 +128,7 @@ export function validatePembayaran(body: Record<string, unknown>): { data?: Pemb
   const errors: Errors = {};
   const jumlah = Number(body.jumlah);
   if (body.jumlah === undefined || body.jumlah === null || body.jumlah === '') errors.jumlah = 'Jumlah bayar wajib diisi.';
-  else if (!Number.isInteger(jumlah) || jumlah <= 0) errors.jumlah = 'Jumlah bayar harus bilangan bulat lebih dari 0.';
+  else if (!positiveInteger(body.jumlah)) errors.jumlah = 'Jumlah bayar harus bilangan bulat lebih dari 0.';
 
   const base = validateLunas(body);
   if (base.errors) Object.assign(errors, base.errors);
