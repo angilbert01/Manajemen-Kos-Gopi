@@ -424,3 +424,104 @@ test('Sprint 3: rekap dan dashboard konsisten dengan pembayaran aktual serta sis
   assert.equal(dashboard.tagihan_nominal_belum_lunas, summary.nominal_belum_lunas);
   assert.equal(dashboard.tagihan_belum_lunas, summary.total_belum_lunas);
 });
+
+
+// ---------- Sprint 4: EP-03 Sistem Manajemen Keluhan Fasilitas (WBS 3.1 & WBS 3.2) ----------
+
+let keluhanId = 0;
+
+test('TC-Keluhan-01 [WBS 3.1]: Simpan keluhan sisi penghuni -> status awal Pending', async () => {
+  const k = (await call('GET', '/kamar')).body[0];
+  const r = await call('POST', '/keluhan', {
+    kamar_id: k.id,
+    judul: 'AC tidak dingin dan bocor',
+    deskripsi: 'Air AC menetes deras membasahi lantai kamar sejak tadi malam.',
+    kategori: 'Elektronik & AC',
+    prioritas: 'Tinggi',
+  });
+
+  assert.equal(r.status, 201);
+  assert.equal(r.body.status, 'Pending');
+  assert.equal(r.body.judul, 'AC tidak dingin dan bocor');
+  assert.equal(r.body.prioritas, 'Tinggi');
+  assert.equal(r.body.kategori, 'Elektronik & AC');
+  assert.equal(r.body.catatan_penanganan, null);
+  assert.equal(r.body.tanggal_selesai, null);
+  assert.ok(r.body.kamar_nomor);
+  keluhanId = r.body.id;
+});
+
+test('TC-Keluhan-02 [WBS 3.1]: Validasi keluhan - judul & deskripsi kosong / kamar tidak valid ditolak', async () => {
+  const tanpaJudul = await call('POST', '/keluhan', {
+    kamar_id: 1,
+    deskripsi: 'Deskripsi keluhan',
+  });
+  assert.equal(tanpaJudul.status, 422);
+  assert.ok(tanpaJudul.body.errors.judul);
+
+  const tanpaDeskripsi = await call('POST', '/keluhan', {
+    kamar_id: 1,
+    judul: 'Judul keluhan',
+  });
+  assert.equal(tanpaDeskripsi.status, 422);
+  assert.ok(tanpaDeskripsi.body.errors.deskripsi);
+
+  const kamarTidakAda = await call('POST', '/keluhan', {
+    kamar_id: 999999,
+    judul: 'Judul keluhan',
+    deskripsi: 'Deskripsi keluhan',
+  });
+  assert.equal(kamarTidakAda.status, 422);
+  assert.ok(kamarTidakAda.body.errors.kamar_id);
+});
+
+test('TC-Keluhan-03 [WBS 3.2]: Rekap keluhan dan filter status / prioritas', async () => {
+  const rekap = await call('GET', '/keluhan/rekap');
+  assert.equal(rekap.status, 200);
+  assert.ok(rekap.body.total >= 1);
+  assert.ok(rekap.body.pending >= 1);
+  assert.equal(rekap.body.aktif, rekap.body.pending + rekap.body.diproses);
+
+  const listPending = await call('GET', '/keluhan?status=Pending');
+  assert.equal(listPending.status, 200);
+  assert.ok(listPending.body.length >= 1);
+  assert.ok(listPending.body.every((kl: { status: string }) => kl.status === 'Pending'));
+
+  const listTinggi = await call('GET', '/keluhan?prioritas=Tinggi');
+  assert.equal(listTinggi.status, 200);
+  assert.ok(listTinggi.body.length >= 1);
+  assert.ok(listTinggi.body.every((kl: { prioritas: string }) => kl.prioritas === 'Tinggi'));
+});
+
+test('TC-Keluhan-04 [WBS 3.2]: Update status keluhan Pending -> Diproses -> Selesai dengan catatan & tanggal selesai', async () => {
+  // Update status ke Diproses
+  const diproses = await call('PATCH', `/keluhan/${keluhanId}/status`, {
+    status: 'Diproses',
+    catatan_penanganan: 'Teknisi AC dijadwalkan datang jam 13.00 WIB.',
+  });
+  assert.equal(diproses.status, 200);
+  assert.equal(diproses.body.status, 'Diproses');
+  assert.equal(diproses.body.catatan_penanganan, 'Teknisi AC dijadwalkan datang jam 13.00 WIB.');
+  assert.equal(diproses.body.tanggal_selesai, null);
+
+  // Update status ke Selesai
+  const selesai = await call('PATCH', `/keluhan/${keluhanId}/status`, {
+    status: 'Selesai',
+    catatan_penanganan: 'Pipa freon sudah diperbaiki dan AC kembali dingin normal.',
+  });
+  assert.equal(selesai.status, 200);
+  assert.equal(selesai.body.status, 'Selesai');
+  assert.equal(selesai.body.catatan_penanganan, 'Pipa freon sudah diperbaiki dan AC kembali dingin normal.');
+  assert.ok(selesai.body.tanggal_selesai, 'Tanggal selesai harus terisi otomatis saat status Selesai');
+});
+
+test('TC-Keluhan-05 [WBS 3.2]: Ringkasan dashboard memuat data keluhan terpadu', async () => {
+  const ringkasan = await call('GET', '/ringkasan');
+  assert.equal(ringkasan.status, 200);
+  assert.ok(typeof ringkasan.body.keluhan_total === 'number');
+  assert.ok(typeof ringkasan.body.keluhan_pending === 'number');
+  assert.ok(typeof ringkasan.body.keluhan_diproses === 'number');
+  assert.ok(typeof ringkasan.body.keluhan_selesai === 'number');
+  assert.ok(typeof ringkasan.body.keluhan_aktif === 'number');
+  assert.equal(ringkasan.body.keluhan_aktif, ringkasan.body.keluhan_pending + ringkasan.body.keluhan_diproses);
+});

@@ -60,6 +60,11 @@ export interface Ringkasan {
   tagihan_belum_lunas?: number;
   tagihan_nominal_belum_lunas?: number;
   tagihan_dicicil?: number;
+  keluhan_total?: number;
+  keluhan_pending?: number;
+  keluhan_diproses?: number;
+  keluhan_selesai?: number;
+  keluhan_aktif?: number;
 }
 
 export type StatusTagihan = 'Belum Lunas' | 'Lunas';
@@ -135,6 +140,57 @@ export interface PembayaranPayload {
   tanggal_bayar?: string;
   metode_pembayaran?: string;
   catatan?: string;
+}
+
+// ---------- EP-03: Sistem Manajemen Keluhan Fasilitas (WBS 3.1 & 3.2) ----------
+
+export type StatusKeluhan = 'Pending' | 'Diproses' | 'Selesai';
+export type PrioritasKeluhan = 'Rendah' | 'Sedang' | 'Tinggi';
+
+export interface Keluhan {
+  id: number;
+  kamar_id: number;
+  penghuni_id: number | null;
+  judul: string;
+  deskripsi: string;
+  kategori: string;
+  prioritas: PrioritasKeluhan;
+  foto_url: string | null;
+  status: StatusKeluhan;
+  catatan_penanganan: string | null;
+  tanggal_lapor: string;
+  tanggal_selesai: string | null;
+  created_at: string;
+  updated_at: string;
+  kamar_nomor: string;
+  kamar_tipe: string;
+  penghuni_nama: string;
+  penghuni_no_hp: string;
+}
+
+export interface RekapKeluhan {
+  total: number;
+  pending: number;
+  diproses: number;
+  selesai: number;
+  aktif: number;
+}
+
+export interface KeluhanForm {
+  kamar_id: string | number;
+  penghuni_id?: string | number | null;
+  judul: string;
+  deskripsi: string;
+  kategori?: string;
+  prioritas?: PrioritasKeluhan;
+  foto_url?: string;
+  tanggal_lapor?: string;
+}
+
+export interface UpdateStatusKeluhanPayload {
+  status: StatusKeluhan;
+  catatan_penanganan?: string;
+  tanggal_selesai?: string;
 }
 
 export type KamarForm = { nomor: string; tipe: string; harga: string; foto_url: string };
@@ -215,6 +271,20 @@ export const api = {
     bayar: (id: number, payload: PembayaranPayload) => request<Tagihan>('POST', `/tagihan/${id}/pembayaran`, payload),
     hapusPembayaran: (pembayaranId: number) => request<Tagihan>('DELETE', `/pembayaran/${pembayaranId}`),
     remove: (id: number) => request<void>('DELETE', `/tagihan/${id}`),
+  },
+  keluhan: {
+    list: (f: { status?: string; prioritas?: string; kamar_id?: string; penghuni_id?: string; q?: string } = {}) =>
+      request<Keluhan[]>('GET', `/keluhan${qs(f)}`),
+    rekap: () => request<RekapKeluhan>('GET', '/keluhan/rekap'),
+    create: (f: KeluhanForm) =>
+      request<Keluhan>('POST', '/keluhan', {
+        ...f,
+        kamar_id: f.kamar_id === '' ? 0 : Number(f.kamar_id),
+        penghuni_id: f.penghuni_id === undefined || f.penghuni_id === '' || f.penghuni_id === null ? null : Number(f.penghuni_id),
+      }),
+    updateStatus: (id: number, payload: UpdateStatusKeluhanPayload) =>
+      request<Keluhan>('PATCH', `/keluhan/${id}/status`, payload),
+    remove: (id: number) => request<void>('DELETE', `/keluhan/${id}`),
   },
 };
 

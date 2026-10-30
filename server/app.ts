@@ -6,10 +6,13 @@ import {
   validateAdmin,
   validateGenerateTagihan,
   validateKamar,
+  validateKeluhan,
   validateLunas,
   validatePembayaran,
   validatePenghuni,
+  validateStatusKeluhan,
 } from './validation.ts';
+import type { StatusKeluhan } from './validation.ts';
 
 type Row = Record<string, unknown>;
 
@@ -68,10 +71,31 @@ const REKAP_SELECT = `
 
 const ADMIN_COLS = 'id, nama, peran, email, no_hp, nama_kos, alamat_kos, avatar_url, aktif, created_at, updated_at';
 
+const KELUHAN_SELECT = `
+  SELECT kl.id, kl.kamar_id, kl.penghuni_id, kl.judul, kl.deskripsi, kl.kategori,
+         kl.prioritas, kl.foto_url, kl.status, kl.catatan_penanganan,
+         kl.tanggal_lapor, kl.tanggal_selesai, kl.created_at, kl.updated_at,
+         k.nomor AS kamar_nomor, k.tipe AS kamar_tipe,
+         COALESCE(p.nama, pk.nama, 'Penghuni Kamar') AS penghuni_nama,
+         COALESCE(p.no_hp, pk.no_hp, '') AS penghuni_no_hp
+  FROM keluhan kl
+  JOIN kamar k ON k.id = kl.kamar_id
+  LEFT JOIN penghuni p ON p.id = kl.penghuni_id
+  LEFT JOIN penghuni pk ON pk.kamar_id = kl.kamar_id AND pk.aktif = 1`;
+
+const KELUHAN_REKAP_SELECT = `
+  SELECT
+    COUNT(*) AS total,
+    COALESCE(SUM(CASE WHEN status = 'Pending' THEN 1 ELSE 0 END), 0) AS pending,
+    COALESCE(SUM(CASE WHEN status = 'Diproses' THEN 1 ELSE 0 END), 0) AS diproses,
+    COALESCE(SUM(CASE WHEN status = 'Selesai' THEN 1 ELSE 0 END), 0) AS selesai
+  FROM keluhan`;
+
 const getKamar = (id: number | bigint) => db.prepare(`${KAMAR_SELECT} WHERE k.id = ?`).get(id);
 const getPenghuni = (id: number | bigint) => db.prepare(`${PENGHUNI_SELECT} WHERE p.id = ?`).get(id);
 const getAdmin = (id: number | bigint) => db.prepare(`SELECT ${ADMIN_COLS} FROM admin_profile WHERE id = ?`).get(id);
 const getTagihan = (id: number | bigint) => db.prepare(`${TAGIHAN_SELECT} WHERE t.id = ?`).get(id);
+const getKeluhan = (id: number | bigint) => db.prepare(`${KELUHAN_SELECT} WHERE kl.id = ?`).get(id);
 const getPembayaranList = (tagihanId: number | bigint) =>
   db.prepare(`SELECT id, tagihan_id, jumlah, tanggal_bayar, metode_pembayaran, catatan, created_at
               FROM pembayaran WHERE tagihan_id = ? ORDER BY tanggal_bayar ASC, id ASC`).all(tagihanId);
@@ -212,6 +236,7 @@ export function createApp() {
     };
     const currentBulan = tanggalJakarta().slice(0, 7);
     const tagihanRekap = db.prepare(REKAP_SELECT).get(currentBulan) as Row;
+    const keluhanRekap = db.prepare(KELUHAN_REKAP_SELECT).get() as Row;
 
     res.json({
       total_kamar: r.total,
@@ -228,6 +253,11 @@ export function createApp() {
       tagihan_belum_lunas: tagihanRekap.total_belum_lunas,
       tagihan_nominal_belum_lunas: tagihanRekap.nominal_belum_lunas,
       tagihan_dicicil: tagihanRekap.total_dicicil,
+      keluhan_total: keluhanRekap.total,
+      keluhan_pending: keluhanRekap.pending,
+      keluhan_diproses: keluhanRekap.diproses,
+      keluhan_selesai: keluhanRekap.selesai,
+      keluhan_aktif: Number(keluhanRekap.pending ?? 0) + Number(keluhanRekap.diproses ?? 0),
     });
   });
 
@@ -351,6 +381,7 @@ export function createApp() {
     try {
       transaction(() => {
         // Riwayat keuangan tetap disimpan; hanya kamar tanpa tagihan dapat dihapus.
+        db.prepare('DELETE FROM keluhan WHERE kamar_id = ?').run(id);
         db.prepare('DELETE FROM penghuni WHERE kamar_id = ? AND aktif = 0').run(id);
         db.prepare('DELETE FROM kamar WHERE id = ?').run(id);
       });
@@ -582,6 +613,151 @@ export function createApp() {
     if (!row) throw new HttpError(404, 'Tagihan tidak ditemukan.');
     try { db.prepare('DELETE FROM tagihan WHERE id = ?').run(id); }
     catch (err) { mapDbError(err); }
+    res.status(204).end();
+  });
+
+  // ---------- EP-03: Sistem Manajemen Keluhan Fasilitas (WBS 3.1 & 3.2) ----------
+  app.get('/api/keluhan/rekap', (_req, res) => {
+    const r = db.prepare(KELUHAN_REKAP_SELECT).get() as Row;
+    res.json({
+      total: r.total,
+      pending: r.pending,
+      diproses: r.diproses,
+      selesai: r.selesai,
+      aktif: Number(r.pending ?? 0) + Number(r.diproses ?? 0),
+    });
+  });
+
+  app.get('/api/keluhan', (req, res) => {
+    const where: string[] = [];
+    const params: (string | number)[] = [];
+    const { status, prioritas, kamar_id, penghuni_id, q } = req.query;
+
+    if (status !== undefined && !['', 'Pending', 'Diproses', 'Selesai'].includes(status as string))
+      throw new HttpError(422, 'Status keluhan tidak valid.');
+    if (status === 'Pending' || status === 'Diproses' || status === 'Selesai') {
+      where.push('kl.status = ?');
+      params.push(status);
+    }
+    if (prioritas === 'Rendah' || prioritas === 'Sedang' || prioritas === 'Tinggi') {
+      where.push('kl.prioritas = ?');
+      params.push(prioritas);
+    }
+    if (typeof kamar_id === 'string' && kamar_id !== '' && Number.isInteger(Number(kamar_id))) {
+      where.push('kl.kamar_id = ?');
+      params.push(Number(kamar_id));
+    }
+    if (typeof penghuni_id === 'string' && penghuni_id !== '' && Number.isInteger(Number(penghuni_id))) {
+      where.push('kl.penghuni_id = ?');
+      params.push(Number(penghuni_id));
+    }
+    if (typeof q === 'string' && q.trim()) {
+      where.push(
+        '(kl.judul LIKE ? OR kl.deskripsi LIKE ? OR kl.kategori LIKE ? OR k.nomor LIKE ? OR COALESCE(p.nama, pk.nama, "") LIKE ?)',
+      );
+      const s = `%${q.trim()}%`;
+      params.push(s, s, s, s, s);
+    }
+
+    const sql = `${KELUHAN_SELECT} ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+                 ORDER BY
+                   CASE kl.status
+                     WHEN 'Pending' THEN 1
+                     WHEN 'Diproses' THEN 2
+                     WHEN 'Selesai' THEN 3
+                   END ASC,
+                   CASE kl.prioritas
+                     WHEN 'Tinggi' THEN 1
+                     WHEN 'Sedang' THEN 2
+                     WHEN 'Rendah' THEN 3
+                   END ASC,
+                   kl.tanggal_lapor DESC,
+                   kl.id DESC`;
+    res.json(db.prepare(sql).all(...params));
+  });
+
+  app.get('/api/keluhan/:id', (req, res) => {
+    const row = getKeluhan(idParam(req));
+    if (!row) throw new HttpError(404, 'Laporan keluhan tidak ditemukan.');
+    res.json(row);
+  });
+
+  // WBS 3.1: Endpoint simpan keluhan penghuni (BE)
+  app.post('/api/keluhan', (req, res) => {
+    const { data, errors } = validateKeluhan(req.body ?? {});
+    if (!data) throw new HttpError(422, 'Data laporan keluhan tidak valid.', errors);
+
+    const kamar = getKamar(data.kamar_id) as Row | undefined;
+    if (!kamar) throw new HttpError(422, 'Kamar tidak ditemukan.', { kamar_id: 'Kamar tidak ditemukan.' });
+
+    let penghuniId = data.penghuni_id;
+    if (penghuniId !== null) {
+      const penghuni = getPenghuni(penghuniId) as Row | undefined;
+      if (!penghuni) throw new HttpError(422, 'Penghuni tidak ditemukan.', { penghuni_id: 'Penghuni tidak ditemukan.' });
+    } else if (kamar.penghuni_id) {
+      penghuniId = Number(kamar.penghuni_id);
+    }
+
+    try {
+      const r = db
+        .prepare(
+          `INSERT INTO keluhan (kamar_id, penghuni_id, judul, deskripsi, kategori, prioritas, foto_url, status, tanggal_lapor)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?)`,
+        )
+        .run(
+          data.kamar_id,
+          penghuniId,
+          data.judul,
+          data.deskripsi,
+          data.kategori,
+          data.prioritas,
+          data.foto_url,
+          data.tanggal_lapor,
+        );
+      res.status(201).json(getKeluhan(r.lastInsertRowid));
+    } catch (err) {
+      mapDbError(err);
+    }
+  });
+
+  // WBS 3.2: Endpoint update status keluhan Pending/Diproses/Selesai (BE)
+  const handleUpdateStatusKeluhan = (req: Request, res: Response) => {
+    const id = idParam(req);
+    const existing = getKeluhan(id) as Row | undefined;
+    if (!existing) throw new HttpError(404, 'Laporan keluhan tidak ditemukan.');
+
+    const { data, errors } = validateStatusKeluhan(req.body ?? {});
+    if (!data) throw new HttpError(422, 'Data pembaruan status keluhan tidak valid.', errors);
+
+    const catatanFinal =
+      data.catatan_penanganan !== null
+        ? data.catatan_penanganan || null
+        : (existing.catatan_penanganan as string | null);
+
+    const statusBaru: StatusKeluhan = data.status;
+    const tanggalSelesai = statusBaru === 'Selesai' ? data.tanggal_selesai : null;
+
+    db.prepare(
+      `UPDATE keluhan
+       SET status = ?,
+           catatan_penanganan = ?,
+           tanggal_selesai = ?,
+           updated_at = datetime('now')
+       WHERE id = ?`,
+    ).run(statusBaru, catatanFinal, tanggalSelesai, id);
+
+    res.json(getKeluhan(id));
+  };
+
+  app.patch('/api/keluhan/:id/status', handleUpdateStatusKeluhan);
+  app.put('/api/keluhan/:id/status', handleUpdateStatusKeluhan);
+  app.patch('/api/keluhan/:id', handleUpdateStatusKeluhan);
+
+  app.delete('/api/keluhan/:id', (req, res) => {
+    const id = idParam(req);
+    const existing = getKeluhan(id) as Row | undefined;
+    if (!existing) throw new HttpError(404, 'Laporan keluhan tidak ditemukan.');
+    db.prepare('DELETE FROM keluhan WHERE id = ?').run(id);
     res.status(204).end();
   });
 

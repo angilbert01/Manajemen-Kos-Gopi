@@ -135,3 +135,120 @@ export function validatePembayaran(body: Record<string, unknown>): { data?: Pemb
   if (Object.keys(errors).length || !base.data) return { errors };
   return { data: { ...base.data, jumlah } };
 }
+
+// ---------- EP-03: Sistem Manajemen Keluhan Fasilitas (WBS 3.1 & 3.2) ----------
+
+export type StatusKeluhan = 'Pending' | 'Diproses' | 'Selesai';
+export type PrioritasKeluhan = 'Rendah' | 'Sedang' | 'Tinggi';
+
+export const STATUS_KELUHAN_LIST: StatusKeluhan[] = ['Pending', 'Diproses', 'Selesai'];
+export const PRIORITAS_KELUHAN_LIST: PrioritasKeluhan[] = ['Rendah', 'Sedang', 'Tinggi'];
+
+export interface KeluhanInput {
+  kamar_id: number;
+  penghuni_id: number | null;
+  judul: string;
+  deskripsi: string;
+  kategori: string;
+  prioritas: PrioritasKeluhan;
+  foto_url: string | null;
+  tanggal_lapor: string;
+}
+
+export interface UpdateStatusKeluhanInput {
+  status: StatusKeluhan;
+  catatan_penanganan: string | null;
+  tanggal_selesai: string | null;
+}
+
+export function validateKeluhan(body: Record<string, unknown>): { data?: KeluhanInput; errors?: Errors } {
+  const errors: Errors = {};
+  const kamar_id = Number(body.kamar_id);
+  const penghuni_id =
+    body.penghuni_id !== undefined && body.penghuni_id !== null && body.penghuni_id !== ''
+      ? Number(body.penghuni_id)
+      : null;
+  const judul = str(body.judul);
+  const deskripsi = str(body.deskripsi);
+  const kategori = str(body.kategori) || 'Fasilitas Kamar';
+  const prioritasRaw = str(body.prioritas) || 'Sedang';
+  const foto = str(body.foto_url);
+  const tanggal_lapor = str(body.tanggal_lapor) || tanggalJakarta();
+
+  if (!Number.isInteger(kamar_id) || kamar_id <= 0) {
+    errors.kamar_id = 'Pilih kamar yang dilaporkan.';
+  }
+  if (penghuni_id !== null && (!Number.isInteger(penghuni_id) || penghuni_id <= 0)) {
+    errors.penghuni_id = 'Penghuni tidak valid.';
+  }
+  if (!judul) {
+    errors.judul = 'Judul keluhan wajib diisi (contoh: AC bocor / Lampu mati).';
+  } else if (judul.length > 120) {
+    errors.judul = 'Judul keluhan maksimal 120 karakter.';
+  }
+  if (!deskripsi) {
+    errors.deskripsi = 'Deskripsi detail keluhan wajib diisi.';
+  } else if (deskripsi.length > 1000) {
+    errors.deskripsi = 'Deskripsi keluhan maksimal 1000 karakter.';
+  }
+  if (!PRIORITAS_KELUHAN_LIST.includes(prioritasRaw as PrioritasKeluhan)) {
+    errors.prioritas = 'Prioritas harus salah satu dari: Rendah, Sedang, Tinggi.';
+  }
+  if (foto && !/^https?:\/\//i.test(foto)) {
+    errors.foto_url = 'URL foto harus diawali http:// atau https://';
+  }
+  if (!isIsoDate(tanggal_lapor)) {
+    errors.tanggal_lapor = 'Format tanggal lapor harus YYYY-MM-DD.';
+  }
+
+  if (Object.keys(errors).length) return { errors };
+  return {
+    data: {
+      kamar_id,
+      penghuni_id,
+      judul,
+      deskripsi,
+      kategori,
+      prioritas: prioritasRaw as PrioritasKeluhan,
+      foto_url: foto || null,
+      tanggal_lapor,
+    },
+  };
+}
+
+export function validateStatusKeluhan(body: Record<string, unknown>): {
+  data?: UpdateStatusKeluhanInput;
+  errors?: Errors;
+} {
+  const errors: Errors = {};
+  const statusRaw = str(body.status);
+  const catatanRaw = body.catatan_penanganan !== undefined ? str(body.catatan_penanganan) : null;
+  const tanggalSelesaiRaw = str(body.tanggal_selesai);
+
+  if (!statusRaw) {
+    errors.status = 'Status keluhan wajib diisi.';
+  } else if (!STATUS_KELUHAN_LIST.includes(statusRaw as StatusKeluhan)) {
+    errors.status = 'Status keluhan harus salah satu dari: Pending, Diproses, Selesai.';
+  }
+
+  if (catatanRaw && catatanRaw.length > 500) {
+    errors.catatan_penanganan = 'Catatan penanganan maksimal 500 karakter.';
+  }
+
+  if (tanggalSelesaiRaw && !isIsoDate(tanggalSelesaiRaw)) {
+    errors.tanggal_selesai = 'Format tanggal selesai harus YYYY-MM-DD.';
+  }
+
+  if (Object.keys(errors).length) return { errors };
+
+  const status = statusRaw as StatusKeluhan;
+  const tanggal_selesai = status === 'Selesai' ? tanggalSelesaiRaw || tanggalJakarta() : null;
+
+  return {
+    data: {
+      status,
+      catatan_penanganan: catatanRaw,
+      tanggal_selesai,
+    },
+  };
+}

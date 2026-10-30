@@ -26,11 +26,12 @@ import KamarPage from './pages/Kamar';
 import PenghuniPage from './pages/Penghuni';
 import ProfilPage from './pages/Profil';
 
-// Dashboard (berisi Recharts) dimuat terpisah agar halaman lain tidak ikut menanggung bobot grafik.
+// Dashboard, Tagihan & Keluhan dimuat terpisah (code-splitting).
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const TagihanPage = lazy(() => import('./pages/Tagihan'));
+const KeluhanPage = lazy(() => import('./pages/Keluhan'));
 
-const READY = new Set(['Dashboard', 'Kamar', 'Penghuni', 'Tagihan', 'Profil Admin']);
+const READY = new Set(['Dashboard', 'Kamar', 'Penghuni', 'Tagihan', 'Keluhan', 'Profil Admin']);
 
 type Nav = { page: string; action?: 'tambah'; kamarId?: number; n: number };
 
@@ -150,6 +151,11 @@ function App() {
           {page === 'Tagihan' && (
             <Suspense fallback={<Skeleton className="h-96 rounded-xl" />}>
               <TagihanPage key={nav.n} notify={notify} onChanged={refreshSummary} />
+            </Suspense>
+          )}
+          {page === 'Keluhan' && (
+            <Suspense fallback={<Skeleton className="h-96 rounded-xl" />}>
+              <KeluhanPage key={nav.n} notify={notify} onChanged={refreshSummary} />
             </Suspense>
           )}
           {page === 'Profil Admin' && <ProfilPage key={nav.n} notify={notify} onProfileChanged={loadAdmin} />}

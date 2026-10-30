@@ -105,3 +105,65 @@ if (nTagihan === 0) {
 } else {
   console.log(`[seed] Tagihan sudah ada (${nTagihan} tagihan).`);
 }
+
+// Seed keluhan untuk demo Sprint 4 (EP-03) jika belum ada
+const { nKeluhan } = db.prepare('SELECT COUNT(*) AS nKeluhan FROM keluhan').get() as { nKeluhan: number };
+if (nKeluhan === 0) {
+  const p1 = db.prepare(`SELECT p.id, p.kamar_id FROM penghuni p JOIN kamar k ON k.id = p.kamar_id WHERE k.nomor = 'Kamar 01'`).get() as { id: number; kamar_id: number } | undefined;
+  const p2 = db.prepare(`SELECT p.id, p.kamar_id FROM penghuni p JOIN kamar k ON k.id = p.kamar_id WHERE k.nomor = 'Kamar 04'`).get() as { id: number; kamar_id: number } | undefined;
+  const p3 = db.prepare(`SELECT p.id, p.kamar_id FROM penghuni p JOIN kamar k ON k.id = p.kamar_id WHERE k.nomor = 'Kamar 06'`).get() as { id: number; kamar_id: number } | undefined;
+
+  if (p1 && p2 && p3) {
+    transaction(() => {
+      const insKeluhan = db.prepare(`
+        INSERT INTO keluhan (kamar_id, penghuni_id, judul, deskripsi, kategori, prioritas, status, catatan_penanganan, tanggal_lapor, tanggal_selesai)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      // 1. Pending (prioritas tinggi)
+      insKeluhan.run(
+        p1.kamar_id,
+        p1.id,
+        'AC kamar menetes dan kurang dingin',
+        'AC bocor air di bagian bawah unit indoor, pipa freon mengeluarkan suara berdesis sejak kemarin sore.',
+        'Elektronik & AC',
+        'Tinggi',
+        'Pending',
+        null,
+        '2026-10-28',
+        null,
+      );
+
+      // 2. Diproses (prioritas sedang)
+      insKeluhan.run(
+        p2.kamar_id,
+        p2.id,
+        'Kran air wastafel kamar mandi macet',
+        'Putaran kran air wastafel doll dan air hanya menetes kecil.',
+        'Plumbing & Sanitasi',
+        'Sedang',
+        'Diproses',
+        'Teknisi pipa dijadwalkan datang jam 14.00 WIB untuk penggantian seal kran.',
+        '2026-10-27',
+        null,
+      );
+
+      // 3. Selesai (prioritas rendah)
+      insKeluhan.run(
+        p3.kamar_id,
+        p3.id,
+        'Lampu utama kamar redup/berkedip',
+        'Lampu LED plafon kamar sering berkedip saat dinyalakan malam hari.',
+        'Kelistrikan',
+        'Rendah',
+        'Selesai',
+        'Sudah diganti dengan lampu LED Phillips 14W baru oleh pengelola.',
+        '2026-10-25',
+        '2026-10-26',
+      );
+    });
+    console.log(`[seed] Keluhan contoh untuk demo Sprint 4 (Pending, Diproses, Selesai) berhasil ditambahkan.`);
+  }
+} else {
+  console.log(`[seed] Keluhan sudah ada (${nKeluhan} keluhan).`);
+}
