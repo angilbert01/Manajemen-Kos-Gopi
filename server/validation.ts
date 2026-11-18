@@ -1,10 +1,29 @@
 // Validasi input sesuai acceptance criteria EP-01 (lihat Konteks/Dokumen BA & QA Sprint 1).
-import { isIsoDate, tanggalJakarta } from './dates.ts';
+import { hitungTanggalSelesaiSewa, isIsoDate, PERIODE_SEWA_LIST, tanggalJakarta } from './dates.ts';
+import type { PeriodeSewa } from './dates.ts';
 
 export type Errors = Record<string, string>;
 
-export interface KamarInput { nomor: string; tipe: string; harga: number; foto_url: string | null }
-export interface PenghuniInput { nama: string; no_hp: string; kamar_id: number; tanggal_masuk: string }
+export interface KamarInput {
+  nomor: string;
+  tipe: string;
+  harga: number;
+  foto_url: string | null;
+  periode_default: PeriodeSewa;
+  harga_harian: number | null;
+  harga_mingguan: number | null;
+  harga_tahunan: number | null;
+}
+export interface PenghuniInput {
+  nama: string;
+  no_hp: string;
+  kamar_id: number;
+  tanggal_masuk: string;
+  periode_sewa: PeriodeSewa;
+  durasi_sewa: number;
+  harga_sewa: number | null;
+  tanggal_selesai_sewa: string;
+}
 export interface AdminInput {
   nama: string;
   peran: string;
@@ -25,20 +44,48 @@ export const normalizePhone = (v: string) => v.replace(/[\s.-]/g, '');
 export const PHONE_RE = /^(\+62|62|0)8\d{7,12}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+function parseOptionalPrice(val: unknown, fieldLabel: string, key: string, errors: Errors): number | null {
+  if (val === undefined || val === null || val === '') return null;
+  if (!positiveInteger(val)) {
+    errors[key] = `${fieldLabel} harus bilangan bulat lebih dari 0.`;
+    return null;
+  }
+  return Number(val);
+}
+
 export function validateKamar(body: Record<string, unknown>): { data?: KamarInput; errors?: Errors } {
   const errors: Errors = {};
   const nomor = str(body.nomor);
-  const tipe = str(body.tipe);
+  const periodeRaw = body.periode_default === undefined || body.periode_default === null || body.periode_default === ''
+    ? 'Bulanan'
+    : str(body.periode_default);
+  const tipe = str(body.tipe) || periodeRaw;
   const harga = Number(body.harga);
   const foto = str(body.foto_url);
   if (!nomor) errors.nomor = 'Nomor kamar wajib diisi.';
   else if (nomor.length > 20) errors.nomor = 'Nomor kamar maksimal 20 karakter.';
-  if (!tipe) errors.tipe = 'Tipe kamar wajib diisi.';
   if (body.harga === undefined || body.harga === null || body.harga === '') errors.harga = 'Harga wajib diisi.';
   else if (!positiveInteger(body.harga)) errors.harga = 'Harga harus bilangan bulat lebih dari 0.';
+  if (!PERIODE_SEWA_LIST.includes(periodeRaw as PeriodeSewa)) {
+    errors.periode_default = 'Jangka waktu harus Harian, Mingguan, Bulanan, atau Tahunan.';
+  }
+  const harga_harian = parseOptionalPrice(body.harga_harian, 'Tarif harian', 'harga_harian', errors);
+  const harga_mingguan = parseOptionalPrice(body.harga_mingguan, 'Tarif mingguan', 'harga_mingguan', errors);
+  const harga_tahunan = parseOptionalPrice(body.harga_tahunan, 'Tarif tahunan', 'harga_tahunan', errors);
   if (foto && !/^https?:\/\//i.test(foto)) errors.foto_url = 'URL foto harus diawali http:// atau https://';
   if (Object.keys(errors).length) return { errors };
-  return { data: { nomor, tipe, harga, foto_url: foto || null } };
+  return {
+    data: {
+      nomor,
+      tipe,
+      harga,
+      foto_url: foto || null,
+      periode_default: periodeRaw as PeriodeSewa,
+      harga_harian,
+      harga_mingguan,
+      harga_tahunan,
+    },
+  };
 }
 
 export function validatePenghuni(body: Record<string, unknown>): { data?: PenghuniInput; errors?: Errors } {
@@ -47,6 +94,14 @@ export function validatePenghuni(body: Record<string, unknown>): { data?: Penghu
   const no_hp = normalizePhone(str(body.no_hp));
   const kamar_id = Number(body.kamar_id);
   const tanggal_masuk = str(body.tanggal_masuk);
+  const periodeRaw = body.periode_sewa === undefined || body.periode_sewa === null || body.periode_sewa === ''
+    ? 'Bulanan'
+    : str(body.periode_sewa);
+  const durasiRaw = body.durasi_sewa === undefined || body.durasi_sewa === null || body.durasi_sewa === ''
+    ? 1
+    : body.durasi_sewa;
+  const selesaiRaw = str(body.tanggal_selesai_sewa);
+
   if (!nama) errors.nama = 'Nama wajib diisi.';
   else if (nama.length > 100) errors.nama = 'Nama maksimal 100 karakter.';
   if (!no_hp) errors.no_hp = 'Nomor HP wajib diisi.';
@@ -54,8 +109,213 @@ export function validatePenghuni(body: Record<string, unknown>): { data?: Penghu
   if (!Number.isInteger(kamar_id) || kamar_id <= 0) errors.kamar_id = 'Pilih kamar.';
   if (!tanggal_masuk) errors.tanggal_masuk = 'Tanggal masuk wajib diisi.';
   else if (!isIsoDate(tanggal_masuk)) errors.tanggal_masuk = 'Format tanggal tidak valid.';
+
+  if (!PERIODE_SEWA_LIST.includes(periodeRaw as PeriodeSewa)) {
+    errors.periode_sewa = 'Jangka waktu sewa harus Harian, Mingguan, Bulanan, atau Tahunan.';
+  }
+  if (!positiveInteger(durasiRaw) || Number(durasiRaw) > 3650) {
+    errors.durasi_sewa = 'Lama sewa harus bilangan bulat antara 1 sampai 3650.';
+  }
+  const harga_sewa = parseOptionalPrice(body.harga_sewa, 'Harga sewa', 'harga_sewa', errors);
+  if (selesaiRaw) {
+    if (!isIsoDate(selesaiRaw)) errors.tanggal_selesai_sewa = 'Format tanggal selesai sewa tidak valid.';
+    else if (isIsoDate(tanggal_masuk) && selesaiRaw < tanggal_masuk) {
+      errors.tanggal_selesai_sewa = 'Tanggal selesai sewa tidak boleh sebelum tanggal masuk.';
+    }
+  }
+
   if (Object.keys(errors).length) return { errors };
-  return { data: { nama, no_hp, kamar_id, tanggal_masuk } };
+  const periode_sewa = periodeRaw as PeriodeSewa;
+  const durasi_sewa = Number(durasiRaw);
+  const tanggal_selesai_sewa = selesaiRaw || hitungTanggalSelesaiSewa(tanggal_masuk, periode_sewa, durasi_sewa);
+  return {
+    data: {
+      nama,
+      no_hp,
+      kamar_id,
+      tanggal_masuk,
+      periode_sewa,
+      durasi_sewa,
+      harga_sewa,
+      tanggal_selesai_sewa,
+    },
+  };
+}
+
+export interface SewaPenghuniInput {
+  periode_sewa: PeriodeSewa;
+  durasi_sewa: number;
+  harga_sewa: number;
+  tanggal_selesai_sewa: string;
+  update_tagihan: boolean;
+}
+
+export function validateSewaPenghuni(
+  body: Record<string, unknown>,
+  tanggalMasuk: string,
+): { data?: SewaPenghuniInput; errors?: Errors } {
+  const errors: Errors = {};
+  const periodeRaw = body.periode_sewa === undefined || body.periode_sewa === null || body.periode_sewa === ''
+    ? 'Bulanan'
+    : str(body.periode_sewa);
+  const durasiRaw = body.durasi_sewa === undefined || body.durasi_sewa === null || body.durasi_sewa === ''
+    ? 1
+    : body.durasi_sewa;
+  const selesaiRaw = str(body.tanggal_selesai_sewa);
+
+  if (!PERIODE_SEWA_LIST.includes(periodeRaw as PeriodeSewa)) {
+    errors.periode_sewa = 'Jangka waktu sewa harus Harian, Mingguan, Bulanan, atau Tahunan.';
+  }
+  if (!positiveInteger(durasiRaw) || Number(durasiRaw) > 3650) {
+    errors.durasi_sewa = 'Lama sewa harus bilangan bulat antara 1 sampai 3650.';
+  }
+  if (body.harga_sewa === undefined || body.harga_sewa === null || body.harga_sewa === '') {
+    errors.harga_sewa = 'Harga sewa wajib diisi.';
+  } else if (!positiveInteger(body.harga_sewa)) {
+    errors.harga_sewa = 'Harga sewa harus bilangan bulat lebih dari 0.';
+  }
+  if (selesaiRaw) {
+    if (!isIsoDate(selesaiRaw)) errors.tanggal_selesai_sewa = 'Format tanggal selesai sewa tidak valid.';
+    else if (selesaiRaw < tanggalMasuk) errors.tanggal_selesai_sewa = 'Tanggal selesai tidak boleh sebelum tanggal masuk.';
+  }
+
+  if (Object.keys(errors).length) return { errors };
+  const periode_sewa = periodeRaw as PeriodeSewa;
+  const durasi_sewa = Number(durasiRaw);
+  const tanggal_selesai_sewa = selesaiRaw || hitungTanggalSelesaiSewa(tanggalMasuk, periode_sewa, durasi_sewa);
+  return {
+    data: {
+      periode_sewa,
+      durasi_sewa,
+      harga_sewa: Number(body.harga_sewa),
+      tanggal_selesai_sewa,
+      update_tagihan: body.update_tagihan !== false,
+    },
+  };
+}
+
+export interface UpdateTagihanInput {
+  nominal?: number;
+  periode_sewa?: PeriodeSewa;
+  durasi_sewa?: number;
+  jatuh_tempo?: string;
+  catatan?: string | null;
+}
+
+export function validateUpdateTagihan(body: Record<string, unknown>): { data?: UpdateTagihanInput; errors?: Errors } {
+  const errors: Errors = {};
+  const data: UpdateTagihanInput = {};
+
+  if (body.nominal !== undefined) {
+    if (body.nominal === null || body.nominal === '' || !positiveInteger(body.nominal)) {
+      errors.nominal = 'Nominal tagihan harus bilangan bulat lebih dari 0.';
+    } else {
+      data.nominal = Number(body.nominal);
+    }
+  }
+
+  if (body.periode_sewa !== undefined) {
+    const p = str(body.periode_sewa);
+    if (!PERIODE_SEWA_LIST.includes(p as PeriodeSewa)) {
+      errors.periode_sewa = 'Jangka waktu sewa harus Harian, Mingguan, Bulanan, atau Tahunan.';
+    } else {
+      data.periode_sewa = p as PeriodeSewa;
+    }
+  }
+
+  if (body.durasi_sewa !== undefined) {
+    if (!positiveInteger(body.durasi_sewa) || Number(body.durasi_sewa) > 3650) {
+      errors.durasi_sewa = 'Lama sewa harus bilangan bulat antara 1 sampai 3650.';
+    } else {
+      data.durasi_sewa = Number(body.durasi_sewa);
+    }
+  }
+
+  if (body.jatuh_tempo !== undefined) {
+    const jt = str(body.jatuh_tempo);
+    if (!isIsoDate(jt)) errors.jatuh_tempo = 'Format jatuh tempo harus YYYY-MM-DD.';
+    else data.jatuh_tempo = jt;
+  }
+
+  if (body.catatan !== undefined) {
+    if (body.catatan !== null && typeof body.catatan !== 'string') {
+      errors.catatan = 'Catatan harus berupa teks.';
+    } else {
+      const c = str(body.catatan);
+      if (c.length > 500) errors.catatan = 'Catatan maksimal 500 karakter.';
+      else data.catatan = c || null;
+    }
+  }
+
+  if (Object.keys(errors).length) return { errors };
+  if (Object.keys(data).length === 0) {
+    return { errors: { nominal: 'Minimal ubah satu data tagihan (nominal, jangka sewa, jatuh tempo, atau catatan).' } };
+  }
+  return { data };
+}
+
+export interface CreateTagihanManualInput {
+  penghuni_id: number;
+  nominal: number;
+  periode_sewa: PeriodeSewa;
+  durasi_sewa: number;
+  bulan: string;
+  jatuh_tempo: string;
+  catatan: string | null;
+}
+
+export function validateCreateTagihanManual(body: Record<string, unknown>): {
+  data?: CreateTagihanManualInput;
+  errors?: Errors;
+} {
+  const errors: Errors = {};
+  const penghuni_id = Number(body.penghuni_id);
+  const periodeRaw = body.periode_sewa === undefined || body.periode_sewa === null || body.periode_sewa === ''
+    ? 'Bulanan'
+    : str(body.periode_sewa);
+  const durasiRaw = body.durasi_sewa === undefined || body.durasi_sewa === null || body.durasi_sewa === ''
+    ? 1
+    : body.durasi_sewa;
+  const bulanRaw = body.bulan === undefined || body.bulan === '' ? tanggalJakarta().slice(0, 7) : str(body.bulan);
+  const jatuhTempoRaw = str(body.jatuh_tempo) || tanggalJakarta();
+  const catatanRaw = body.catatan !== undefined ? str(body.catatan) : '';
+
+  if (!Number.isInteger(penghuni_id) || penghuni_id <= 0) {
+    errors.penghuni_id = 'Pilih penghuni terlebih dahulu.';
+  }
+  if (body.nominal === undefined || body.nominal === null || body.nominal === '') {
+    errors.nominal = 'Nominal tagihan wajib diisi.';
+  } else if (!positiveInteger(body.nominal)) {
+    errors.nominal = 'Nominal tagihan harus bilangan bulat lebih dari 0.';
+  }
+  if (!PERIODE_SEWA_LIST.includes(periodeRaw as PeriodeSewa)) {
+    errors.periode_sewa = 'Jangka penyewaan harus Harian, Mingguan, Bulanan, atau Tahunan.';
+  }
+  if (!positiveInteger(durasiRaw) || Number(durasiRaw) > 3650) {
+    errors.durasi_sewa = 'Lama penyewaan harus bilangan bulat antara 1 sampai 3650.';
+  }
+  if (!BULAN_RE.test(bulanRaw)) {
+    errors.bulan = 'Format bulan harus YYYY-MM.';
+  }
+  if (!isIsoDate(jatuhTempoRaw)) {
+    errors.jatuh_tempo = 'Format jatuh tempo harus YYYY-MM-DD.';
+  }
+  if (catatanRaw.length > 500) {
+    errors.catatan = 'Catatan maksimal 500 karakter.';
+  }
+
+  if (Object.keys(errors).length) return { errors };
+  return {
+    data: {
+      penghuni_id,
+      nominal: Number(body.nominal),
+      periode_sewa: periodeRaw as PeriodeSewa,
+      durasi_sewa: Number(durasiRaw),
+      bulan: bulanRaw,
+      jatuh_tempo: jatuhTempoRaw,
+      catatan: catatanRaw || null,
+    },
+  };
 }
 
 export function validateAdmin(body: Record<string, unknown>): { data?: AdminInput; errors?: Errors } {

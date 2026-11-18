@@ -78,7 +78,7 @@ export function TrenMasukChart({ data }: { data: BucketBulan[] }) {
 }
 
 export function OkupansiTipeChart({ stats }: { stats: { tipe: string; total: number; occ: number }[] }) {
-  const data = stats.map((t) => ({ tipe: `Tipe ${t.tipe}`, terisi: t.occ, kosong: t.total - t.occ }));
+  const data = stats.map((t) => ({ tipe: t.tipe, terisi: t.occ, kosong: t.total - t.occ }));
   const config = {
     terisi: { label: 'Terisi', color: 'var(--chart-1)' },
     kosong: { label: 'Kosong', color: 'var(--chart-muted)' },

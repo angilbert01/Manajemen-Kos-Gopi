@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { BedDouble, Plus } from 'lucide-react';
-import { api, ApiError, rupiah } from '../api';
+import { api, ApiError, formatPeriodeSewa, rupiah } from '../api';
 import type { Kamar, KamarForm } from '../api';
 import { Field, Modal, StatusPill, selectClass } from '../components';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -12,12 +12,13 @@ import { enterClass, stagger } from '@/lib/motion';
 import { cn } from '@/lib/utils';
 
 // EP-01 US-02 (WBS 1.2): katalog & status kamar + kelola data kamar (EP-01 US-01).
+// Nominal tagihan & jangka penyewaan (Harian/Mingguan/Bulanan/Tahunan) diatur klien pada Penghuni / Tagihan.
 
-const TIPE = ['Standar', 'AC', 'VIP'];
-const HARGA_MAX = [
-  ['', 'Semua harga'], ['1000000', '≤ Rp 1.000.000'], ['1300000', '≤ Rp 1.300.000'], ['2000000', '≤ Rp 2.000.000'],
-];
-const emptyForm: KamarForm = { nomor: '', tipe: 'Standar', harga: '', foto_url: '' };
+const emptyForm: KamarForm = {
+  nomor: '',
+  harga: '',
+  foto_url: '',
+};
 
 type Props = { notify: (m: string) => void; autoOpen?: boolean; initialQuery?: string; onDaftarkan: (kamarId: number) => void };
 
@@ -27,20 +28,19 @@ export default function KamarPage({ notify, autoOpen = false, initialQuery = '',
   const [error, setError] = useState('');
   const [q, setQ] = useState(initialQuery);
   const [status, setStatus] = useState('');
-  const [hargaMax, setHargaMax] = useState('');
   const [editing, setEditing] = useState<Kamar | 'new' | null>(autoOpen ? 'new' : null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setItems(await api.kamar.list({ status, harga_max: hargaMax, q }));
+      setItems(await api.kamar.list({ status, q }));
       setError('');
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setLoading(false);
     }
-  }, [status, hargaMax, q]);
+  }, [status, q]);
 
   useEffect(() => {
     const t = window.setTimeout(load, 200);
@@ -68,7 +68,7 @@ export default function KamarPage({ notify, autoOpen = false, initialQuery = '',
             <Input
               type="search"
               className="sm:flex-1"
-              placeholder="Cari nomor, tipe kamar, atau nama penghuni..."
+              placeholder="Cari nomor kamar atau nama penghuni..."
               aria-label="Cari kamar"
               value={q}
               onChange={(e) => setQ(e.target.value)}
@@ -77,13 +77,6 @@ export default function KamarPage({ notify, autoOpen = false, initialQuery = '',
               <option value="">Semua status</option>
               <option>Kosong</option>
               <option>Terisi</option>
-            </select>
-            <select aria-label="Filter harga" className={`${selectClass} sm:w-44`} value={hargaMax} onChange={(e) => setHargaMax(e.target.value)}>
-              {HARGA_MAX.map(([v, l]) => (
-                <option key={v} value={v}>
-                  {l}
-                </option>
-              ))}
             </select>
             <Button onClick={() => setEditing('new')}>
               <Plus /> Tambah Kamar
@@ -109,7 +102,7 @@ export default function KamarPage({ notify, autoOpen = false, initialQuery = '',
       ) : !items.length ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            Belum ada kamar yang cocok. {!status && !q && !hargaMax && 'Klik "Tambah Kamar" untuk mulai.'}
+            Belum ada kamar yang cocok. {!status && !q && 'Klik "Tambah Kamar" untuk mulai.'}
           </CardContent>
         </Card>
       ) : (
@@ -132,15 +125,20 @@ export default function KamarPage({ notify, autoOpen = false, initialQuery = '',
                   <h3 className="truncate font-semibold">{k.nomor}</h3>
                   <StatusPill status={k.status} />
                 </div>
-                <p className="text-sm text-muted-foreground">Tipe {k.tipe}</p>
-                <p className="text-lg font-semibold">
-                  {rupiah(k.harga)}
-                  <span className="text-sm font-normal text-muted-foreground"> / bulan</span>
-                </p>
-                {k.status === 'Terisi' && k.penghuni_nama && (
-                  <p className="truncate text-sm">
-                    Dihuni: <span className="font-medium">{k.penghuni_nama}</span> ({k.penghuni_no_hp})
-                  </p>
+                {k.status === 'Terisi' && k.penghuni_nama ? (
+                  <div className="space-y-1 text-sm">
+                    <p className="truncate">
+                      Dihuni: <span className="font-medium">{k.penghuni_nama}</span> ({k.penghuni_no_hp})
+                    </p>
+                    <p className="text-base font-semibold tabular-nums">
+                      {rupiah(k.penghuni_harga_sewa ?? k.harga)}
+                      <span className="text-xs font-normal text-muted-foreground">
+                        {' '}· {formatPeriodeSewa(k.penghuni_periode_sewa ?? 'Bulanan', k.penghuni_durasi_sewa ?? 1)}
+                      </span>
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Siap disewakan · Harian / Mingguan / Bulanan / Tahunan</p>
                 )}
                 <div className="mt-auto flex flex-wrap gap-2 pt-3">
                   {k.status === 'Kosong' && (
@@ -180,7 +178,13 @@ export default function KamarPage({ notify, autoOpen = false, initialQuery = '',
 
 function KamarModal({ kamar, onClose, onSaved }: { kamar: Kamar | null; onClose: () => void; onSaved: (k: Kamar, isNew: boolean) => void }) {
   const [form, setForm] = useState<KamarForm>(
-    kamar ? { nomor: kamar.nomor, tipe: kamar.tipe, harga: String(kamar.harga), foto_url: kamar.foto_url ?? '' } : emptyForm,
+    kamar
+      ? {
+          nomor: kamar.nomor,
+          harga: String(kamar.harga),
+          foto_url: kamar.foto_url ?? '',
+        }
+      : emptyForm,
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -190,8 +194,6 @@ function KamarModal({ kamar, onClose, onSaved }: { kamar: Kamar | null; onClose:
     e.preventDefault();
     const local: Record<string, string> = {};
     if (!form.nomor.trim()) local.nomor = 'Nomor kamar wajib diisi.';
-    if (!form.harga) local.harga = 'Harga wajib diisi.';
-    else if (!(Number(form.harga) > 0)) local.harga = 'Harga harus lebih dari 0.';
     setErrors(local);
     if (Object.keys(local).length) return;
     setSaving(true);
@@ -205,8 +207,6 @@ function KamarModal({ kamar, onClose, onSaved }: { kamar: Kamar | null; onClose:
     }
   };
 
-  const tipeOptions = TIPE.includes(form.tipe) ? TIPE : [...TIPE, form.tipe];
-
   return (
     <Modal title={kamar ? `Ubah ${kamar.nomor}` : 'Tambah Kamar'} onClose={onClose}>
       <form className="grid gap-4" onSubmit={submit} noValidate>
@@ -218,30 +218,12 @@ function KamarModal({ kamar, onClose, onSaved }: { kamar: Kamar | null; onClose:
         <Field label="Nomor kamar *" error={errors.nomor}>
           <Input autoFocus value={form.nomor} onChange={set('nomor')} placeholder="mis. Kamar 13" maxLength={20} aria-invalid={!!errors.nomor} />
         </Field>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Tipe *" error={errors.tipe}>
-            <select className={selectClass} value={form.tipe} onChange={set('tipe')}>
-              {tipeOptions.map((t) => (
-                <option key={t}>{t}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Harga per bulan (Rp) *" error={errors.harga}>
-            <Input
-              type="number"
-              inputMode="numeric"
-              min={1}
-              step={50000}
-              value={form.harga}
-              onChange={set('harga')}
-              placeholder="1200000"
-              aria-invalid={!!errors.harga}
-            />
-          </Field>
-        </div>
         <Field label="URL foto (opsional)" error={errors.foto_url}>
           <Input type="url" value={form.foto_url} onChange={set('foto_url')} placeholder="https://..." />
         </Field>
+        <p className="text-xs text-muted-foreground">
+          Nominal tagihan dan jangka penyewaan (Harian, Mingguan, Bulanan, Tahunan) ditentukan langsung saat mendaftarkan penghuni atau membuat tagihan.
+        </p>
         <div className="flex justify-end gap-2">
           <Button type="button" variant="outline" onClick={onClose}>
             Batal

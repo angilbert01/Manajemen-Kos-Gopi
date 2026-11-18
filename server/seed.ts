@@ -7,9 +7,8 @@ const { n } = db.prepare('SELECT COUNT(*) AS n FROM kamar').get() as { n: number
 if (n === 0) {
   const kamar = Array.from({ length: 12 }, (_, i) => {
     const no = String(i + 1).padStart(2, '0');
-    const tipe = i < 4 ? 'VIP' : i < 8 ? 'AC' : 'Standar';
-    const harga = tipe === 'VIP' ? 1_500_000 : tipe === 'AC' ? 1_200_000 : 900_000;
-    return { nomor: `Kamar ${no}`, tipe, harga };
+    const harga = i < 4 ? 1_500_000 : i < 8 ? 1_200_000 : 900_000;
+    return { nomor: `Kamar ${no}`, tipe: 'Bulanan', harga };
   });
   const penghuni = [
     { nama: 'Andi Pratama', no_hp: '081234567801', kamar: 'Kamar 01', masuk: '2026-01-05' },

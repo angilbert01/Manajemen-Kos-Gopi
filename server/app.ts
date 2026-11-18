@@ -1,16 +1,22 @@
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import { db, migrate, transaction } from './db.ts';
-import { isIsoDate, selisihHari, tanggalJakarta } from './dates.ts';
+import { hitungTanggalSelesaiSewa, isIsoDate, selisihHari, tanggalJakarta } from './dates.ts';
 import {
   validateAdmin,
+  validateCreateTagihanManual,
   validateGenerateTagihan,
   validateKamar,
   validateKeluhan,
   validateLunas,
   validatePembayaran,
   validatePenghuni,
+  validateSewaPenghuni,
   validateStatusKeluhan,
+  validateUpdateTagihan,
 } from './validation.ts';
 import type { StatusKeluhan } from './validation.ts';
 import { buatKodeHubung } from './bot.ts';
@@ -27,13 +33,19 @@ import {
 type Row = Record<string, unknown>;
 
 const KAMAR_SELECT = `
-  SELECT k.id, k.nomor, k.tipe, k.harga, k.status, k.foto_url, k.created_at, k.updated_at,
-         p.id AS penghuni_id, p.nama AS penghuni_nama, p.no_hp AS penghuni_no_hp, p.tanggal_masuk AS penghuni_masuk
+  SELECT k.id, k.nomor, k.tipe, k.harga, k.status, k.foto_url,
+         k.periode_default, k.harga_harian, k.harga_mingguan, k.harga_tahunan,
+         k.created_at, k.updated_at,
+         p.id AS penghuni_id, p.nama AS penghuni_nama, p.no_hp AS penghuni_no_hp, p.tanggal_masuk AS penghuni_masuk,
+         p.periode_sewa AS penghuni_periode_sewa, p.durasi_sewa AS penghuni_durasi_sewa,
+         COALESCE(p.harga_sewa, k.harga) AS penghuni_harga_sewa, p.tanggal_selesai_sewa AS penghuni_selesai_sewa
   FROM kamar k
   LEFT JOIN penghuni p ON p.kamar_id = k.id AND p.aktif = 1`;
 
 const PENGHUNI_SELECT = `
   SELECT p.id, p.nama, p.no_hp, p.kamar_id, k.nomor AS kamar_nomor, k.tipe AS kamar_tipe, k.harga AS kamar_harga,
+         p.periode_sewa, p.durasi_sewa, COALESCE(p.harga_sewa, k.harga) AS harga_sewa,
+         p.harga_sewa AS harga_sewa_kustom, p.tanggal_selesai_sewa,
          p.tanggal_masuk, p.tanggal_keluar, p.aktif, p.created_at,
          (SELECT COUNT(*) FROM tagihan t WHERE t.penghuni_id = p.id AND t.status = 'Belum Lunas') AS tagihan_belum_lunas,
          (p.chat_id IS NOT NULL) AS chat_terhubung
@@ -47,7 +59,7 @@ const PEMBAYARAN_AGG = `
   ) pb ON pb.tagihan_id = t.id`;
 
 const TAGIHAN_SELECT = `
-  SELECT t.id, t.penghuni_id, t.kamar_id, t.bulan, t.nominal, t.status,
+  SELECT t.id, t.penghuni_id, t.kamar_id, t.bulan, t.nominal, t.periode_sewa, t.durasi_sewa, t.status,
          t.jatuh_tempo, t.tanggal_bayar, t.metode_pembayaran, t.catatan,
          t.created_at, t.updated_at,
          COALESCE(pb.terbayar, 0) AS terbayar,
@@ -57,6 +69,7 @@ const TAGIHAN_SELECT = `
               WHEN COALESCE(pb.terbayar, 0) > 0 THEN 'Dicicil'
               ELSE 'Belum Bayar' END AS status_bayar,
          p.nama AS penghuni_nama, p.no_hp AS penghuni_no_hp, p.tanggal_masuk AS penghuni_masuk,
+         p.tanggal_selesai_sewa AS penghuni_selesai_sewa,
          k.nomor AS kamar_nomor, k.tipe AS kamar_tipe, k.harga AS kamar_harga
   FROM tagihan t
   JOIN penghuni p ON p.id = t.penghuni_id
@@ -143,7 +156,8 @@ export function hitungJatuhTempo(tanggalMasuk: string, bulan: string): string {
 
 export function generateTagihanBulan(targetBulan: string) {
   const activePenghuni = db.prepare(`
-    SELECT p.id AS penghuni_id, p.kamar_id, p.tanggal_masuk, k.harga, k.nomor AS kamar_nomor, p.nama AS penghuni_nama
+    SELECT p.id AS penghuni_id, p.kamar_id, p.tanggal_masuk, p.periode_sewa, p.durasi_sewa, p.tanggal_selesai_sewa,
+           COALESCE(p.harga_sewa, k.harga) AS harga, k.nomor AS kamar_nomor, p.nama AS penghuni_nama
     FROM penghuni p
     JOIN kamar k ON k.id = p.kamar_id
     WHERE p.aktif = 1
@@ -151,6 +165,9 @@ export function generateTagihanBulan(targetBulan: string) {
     penghuni_id: number;
     kamar_id: number;
     tanggal_masuk: string;
+    periode_sewa: string;
+    durasi_sewa: number;
+    tanggal_selesai_sewa: string | null;
     harga: number;
     kamar_nomor: string;
     penghuni_nama: string;
@@ -161,9 +178,10 @@ export function generateTagihanBulan(targetBulan: string) {
 
   transaction(() => {
     const checkStmt = db.prepare('SELECT id FROM tagihan WHERE penghuni_id = ? AND bulan = ?');
+    const anyStmt = db.prepare('SELECT 1 FROM tagihan WHERE penghuni_id = ? LIMIT 1');
     const insStmt = db.prepare(`
-      INSERT INTO tagihan (penghuni_id, kamar_id, bulan, nominal, status, jatuh_tempo)
-      VALUES (?, ?, ?, ?, 'Belum Lunas', ?)
+      INSERT INTO tagihan (penghuni_id, kamar_id, bulan, nominal, periode_sewa, durasi_sewa, status, jatuh_tempo)
+      VALUES (?, ?, ?, ?, ?, ?, 'Belum Lunas', ?)
     `);
 
     for (const p of activePenghuni) {
@@ -175,8 +193,13 @@ export function generateTagihanBulan(targetBulan: string) {
       if (existing) {
         dilewati++;
       } else {
+        // Sewa Harian / Mingguan / Tahunan ditagih sesuai jangka sewa; tidak otomatis ditagih ulang tiap bulan selama masih dalam masa sewa.
+        if (p.periode_sewa !== 'Bulanan' && anyStmt.get(p.penghuni_id) && (!p.tanggal_selesai_sewa || `${targetBulan}-01` < p.tanggal_selesai_sewa)) {
+          dilewati++;
+          continue;
+        }
         const jatuhTempo = hitungJatuhTempo(p.tanggal_masuk, targetBulan);
-        insStmt.run(p.penghuni_id, p.kamar_id, targetBulan, p.harga, jatuhTempo);
+        insStmt.run(p.penghuni_id, p.kamar_id, targetBulan, p.harga, p.periode_sewa, p.durasi_sewa, jatuhTempo);
         dibuat++;
       }
     }
@@ -256,11 +279,12 @@ export function createApp() {
     const r = db.prepare(`
       SELECT
         COUNT(*) AS total,
-        COALESCE(SUM(status = 'Terisi'), 0) AS terisi,
-        COALESCE(SUM(status = 'Kosong'), 0) AS kosong,
-        COALESCE(SUM(CASE WHEN status = 'Terisi' THEN harga ELSE 0 END), 0) AS pendapatan_bulanan,
-        COALESCE(SUM(harga), 0) AS potensi_pendapatan
-      FROM kamar
+        COALESCE(SUM(k.status = 'Terisi'), 0) AS terisi,
+        COALESCE(SUM(k.status = 'Kosong'), 0) AS kosong,
+        COALESCE(SUM(CASE WHEN k.status = 'Terisi' THEN COALESCE(p.harga_sewa, k.harga) ELSE 0 END), 0) AS pendapatan_bulanan,
+        COALESCE(SUM(k.harga), 0) AS potensi_pendapatan
+      FROM kamar k
+      LEFT JOIN penghuni p ON p.kamar_id = k.id AND p.aktif = 1
     `).get() as Row;
     const { total_penghuni } = db.prepare('SELECT COUNT(*) AS total_penghuni FROM penghuni WHERE aktif = 1').get() as {
       total_penghuni: number;
@@ -386,8 +410,19 @@ export function createApp() {
     const { data, errors } = validateKamar(req.body ?? {});
     if (!data) throw new HttpError(422, 'Data kamar tidak valid.', errors);
     try {
-      const r = db.prepare('INSERT INTO kamar (nomor, tipe, harga, foto_url) VALUES (?, ?, ?, ?)')
-        .run(data.nomor, data.tipe, data.harga, data.foto_url);
+      const r = db.prepare(
+        `INSERT INTO kamar (nomor, tipe, harga, foto_url, periode_default, harga_harian, harga_mingguan, harga_tahunan)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        data.nomor,
+        data.tipe,
+        data.harga,
+        data.foto_url,
+        data.periode_default,
+        data.harga_harian,
+        data.harga_mingguan,
+        data.harga_tahunan,
+      );
       res.status(201).json(getKamar(r.lastInsertRowid));
     } catch (err) { mapDbError(err); }
   });
@@ -398,8 +433,21 @@ export function createApp() {
     const { data, errors } = validateKamar(req.body ?? {});
     if (!data) throw new HttpError(422, 'Data kamar tidak valid.', errors);
     try {
-      db.prepare(`UPDATE kamar SET nomor = ?, tipe = ?, harga = ?, foto_url = ?, updated_at = datetime('now')
-                  WHERE id = ?`).run(data.nomor, data.tipe, data.harga, data.foto_url, id);
+      db.prepare(`UPDATE kamar
+                  SET nomor = ?, tipe = ?, harga = ?, foto_url = ?,
+                      periode_default = ?, harga_harian = ?, harga_mingguan = ?, harga_tahunan = ?,
+                      updated_at = datetime('now')
+                  WHERE id = ?`).run(
+        data.nomor,
+        data.tipe,
+        data.harga,
+        data.foto_url,
+        data.periode_default,
+        data.harga_harian,
+        data.harga_mingguan,
+        data.harga_tahunan,
+        id,
+      );
       res.json(getKamar(id));
     } catch (err) { mapDbError(err); }
   });
@@ -442,20 +490,85 @@ export function createApp() {
     try {
       // Trigger trg_penghuni_masuk otomatis mengubah status kamar menjadi "Terisi".
       const id = transaction(() => {
-        const r = db.prepare('INSERT INTO penghuni (nama, no_hp, kamar_id, tanggal_masuk) VALUES (?, ?, ?, ?)')
-          .run(data.nama, data.no_hp, data.kamar_id, data.tanggal_masuk);
+        const r = db.prepare(
+          `INSERT INTO penghuni (nama, no_hp, kamar_id, tanggal_masuk, periode_sewa, durasi_sewa, harga_sewa, tanggal_selesai_sewa)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          data.nama,
+          data.no_hp,
+          data.kamar_id,
+          data.tanggal_masuk,
+          data.periode_sewa,
+          data.durasi_sewa,
+          data.harga_sewa,
+          data.tanggal_selesai_sewa,
+        );
         // Penghuni lama yang baru dicatat hanya ditagih periode berjalan, bukan bulan masuk bertahun lalu.
         const bulanMasuk = data.tanggal_masuk.slice(0, 7);
         const bulanBerjalan = tanggalJakarta().slice(0, 7);
         const bulan = bulanMasuk > bulanBerjalan ? bulanMasuk : bulanBerjalan;
+        const nominalAwal = data.harga_sewa ?? (kamar.harga as number);
         db.prepare(`
-          INSERT INTO tagihan (penghuni_id, kamar_id, bulan, nominal, status, jatuh_tempo)
-          VALUES (?, ?, ?, ?, 'Belum Lunas', ?)
-        `).run(r.lastInsertRowid, data.kamar_id, bulan, kamar.harga as number, hitungJatuhTempo(data.tanggal_masuk, bulan));
+          INSERT INTO tagihan (penghuni_id, kamar_id, bulan, nominal, periode_sewa, durasi_sewa, status, jatuh_tempo)
+          VALUES (?, ?, ?, ?, ?, ?, 'Belum Lunas', ?)
+        `).run(
+          r.lastInsertRowid,
+          data.kamar_id,
+          bulan,
+          nominalAwal,
+          data.periode_sewa,
+          data.durasi_sewa,
+          hitungJatuhTempo(data.tanggal_masuk, bulan),
+        );
         return r.lastInsertRowid;
       });
       res.status(201).json(getPenghuni(id));
     } catch (err) { mapDbError(err); }
+  });
+
+  // Atur ulang harga dan jangka waktu sewa (Harian/Mingguan/Bulanan/Tahunan) untuk penghuni aktif.
+  app.patch('/api/penghuni/:id/sewa', (req, res) => {
+    const id = idParam(req);
+    const p = getPenghuni(id) as Row | undefined;
+    if (!p) throw new HttpError(404, 'Penghuni tidak ditemukan.');
+    if (p.aktif !== 1) throw new HttpError(409, 'Penghuni sudah tidak aktif.');
+    const { data, errors } = validateSewaPenghuni(req.body ?? {}, p.tanggal_masuk as string);
+    if (!data) throw new HttpError(422, 'Data pengaturan sewa tidak valid.', errors);
+
+    transaction(() => {
+      db.prepare(`
+        UPDATE penghuni
+        SET periode_sewa = ?, durasi_sewa = ?, harga_sewa = ?, tanggal_selesai_sewa = ?
+        WHERE id = ?
+      `).run(data.periode_sewa, data.durasi_sewa, data.harga_sewa, data.tanggal_selesai_sewa, id);
+
+      if (data.update_tagihan) {
+        const tagihanAktif = db.prepare(`
+          SELECT id, (SELECT COALESCE(SUM(jumlah), 0) FROM pembayaran pb WHERE pb.tagihan_id = tagihan.id AND pb.dibatalkan_at IS NULL) AS terbayar
+          FROM tagihan
+          WHERE penghuni_id = ? AND status = 'Belum Lunas'
+          ORDER BY bulan DESC, id DESC LIMIT 1
+        `).get(id) as { id: number; terbayar: number } | undefined;
+
+        if (tagihanAktif) {
+          if (data.harga_sewa < tagihanAktif.terbayar) {
+            throw new HttpError(
+              422,
+              `Harga sewa baru tidak boleh kurang dari nominal yang sudah dibayar (Rp ${tagihanAktif.terbayar.toLocaleString('id-ID')}).`,
+              { harga_sewa: `Minimal Rp ${tagihanAktif.terbayar.toLocaleString('id-ID')} (sudah terbayar).` },
+            );
+          }
+          db.prepare(`
+            UPDATE tagihan
+            SET nominal = ?, periode_sewa = ?, durasi_sewa = ?, updated_at = datetime('now')
+            WHERE id = ?
+          `).run(data.harga_sewa, data.periode_sewa, data.durasi_sewa, tagihanAktif.id);
+          syncStatusTagihan(tagihanAktif.id);
+        }
+      }
+    });
+
+    res.json(getPenghuni(id));
   });
 
   app.patch('/api/penghuni/:id/keluar', (req, res) => {
@@ -491,6 +604,63 @@ export function createApp() {
       throw new HttpError(422, 'Tagihan bulan depan belum bisa dibuat.', { bulan: 'Pilih bulan berjalan atau sebelumnya.' });
     const result = generateTagihanBulan(data.bulan);
     res.json(result);
+  });
+
+  // Input atau perbarui tagihan langsung oleh pemilik dengan nominal dan jangka penyewaan yang diinginkan.
+  app.post('/api/tagihan', (req, res) => {
+    const { data, errors } = validateCreateTagihanManual(req.body ?? {});
+    if (!data) throw new HttpError(422, 'Data tagihan tidak valid.', errors);
+
+    const p = getPenghuni(data.penghuni_id) as Row | undefined;
+    if (!p) throw new HttpError(422, 'Penghuni tidak ditemukan.', { penghuni_id: 'Penghuni tidak ditemukan.' });
+
+    const tglSelesai = hitungTanggalSelesaiSewa(data.jatuh_tempo, data.periode_sewa, data.durasi_sewa);
+    const tagihanId = transaction(() => {
+      db.prepare(`
+        UPDATE penghuni
+        SET periode_sewa = ?, durasi_sewa = ?, harga_sewa = ?, tanggal_selesai_sewa = ?
+        WHERE id = ?
+      `).run(data.periode_sewa, data.durasi_sewa, data.nominal, tglSelesai, data.penghuni_id);
+
+      const existing = db.prepare(`
+        SELECT t.id, COALESCE((SELECT SUM(jumlah) FROM pembayaran pb WHERE pb.tagihan_id = t.id AND pb.dibatalkan_at IS NULL), 0) AS terbayar
+        FROM tagihan t WHERE t.penghuni_id = ? AND t.bulan = ?
+      `).get(data.penghuni_id, data.bulan) as { id: number; terbayar: number } | undefined;
+
+      if (existing) {
+        if (data.nominal < existing.terbayar) {
+          const msg = `Nominal tagihan tidak boleh kurang dari jumlah yang sudah dibayar (Rp ${existing.terbayar.toLocaleString('id-ID')}).`;
+          throw new HttpError(422, msg, { nominal: msg });
+        }
+        db.prepare(`
+          UPDATE tagihan
+          SET nominal = ?, periode_sewa = ?, durasi_sewa = ?, jatuh_tempo = ?, updated_at = datetime('now')
+          WHERE id = ?
+        `).run(data.nominal, data.periode_sewa, data.durasi_sewa, data.jatuh_tempo, existing.id);
+        syncStatusTagihan(existing.id);
+        if (data.catatan !== null) {
+          db.prepare('UPDATE tagihan SET catatan = ? WHERE id = ?').run(data.catatan, existing.id);
+        }
+        return existing.id;
+      }
+
+      const ins = db.prepare(`
+        INSERT INTO tagihan (penghuni_id, kamar_id, bulan, nominal, periode_sewa, durasi_sewa, status, jatuh_tempo, catatan)
+        VALUES (?, ?, ?, ?, ?, ?, 'Belum Lunas', ?, ?)
+      `).run(
+        data.penghuni_id,
+        p.kamar_id as number,
+        data.bulan,
+        data.nominal,
+        data.periode_sewa,
+        data.durasi_sewa,
+        data.jatuh_tempo,
+        data.catatan,
+      );
+      return Number(ins.lastInsertRowid);
+    });
+
+    res.status(201).json(getTagihan(tagihanId));
   });
 
   app.get('/api/tagihan', (req, res) => {
@@ -577,6 +747,45 @@ export function createApp() {
     const row = getTagihan(idParam(req));
     if (!row) throw new HttpError(404, 'Tagihan tidak ditemukan.');
     res.json(row);
+  });
+
+  // Atur langsung nominal, jangka sewa (Harian/Mingguan/Bulanan/Tahunan), jatuh tempo, atau catatan pada tagihan.
+  app.patch('/api/tagihan/:id', (req, res) => {
+    const id = idParam(req);
+    const row = getTagihan(id) as Row | undefined;
+    if (!row) throw new HttpError(404, 'Tagihan tidak ditemukan.');
+    const { data, errors } = validateUpdateTagihan(req.body ?? {});
+    if (!data) throw new HttpError(422, 'Data perubahan tagihan tidak valid.', errors);
+
+    const terbayar = Number(row.terbayar ?? 0);
+    if (data.nominal !== undefined && data.nominal < terbayar) {
+      const msg = `Nominal tagihan tidak boleh kurang dari jumlah yang sudah dibayar (Rp ${terbayar.toLocaleString('id-ID')}).`;
+      throw new HttpError(422, msg, { nominal: msg });
+    }
+
+    transaction(() => {
+      db.prepare(`
+        UPDATE tagihan
+        SET nominal = COALESCE(?, nominal),
+            periode_sewa = COALESCE(?, periode_sewa),
+            durasi_sewa = COALESCE(?, durasi_sewa),
+            jatuh_tempo = COALESCE(?, jatuh_tempo),
+            updated_at = datetime('now')
+        WHERE id = ?
+      `).run(
+        data.nominal ?? null,
+        data.periode_sewa ?? null,
+        data.durasi_sewa ?? null,
+        data.jatuh_tempo ?? null,
+        id,
+      );
+      syncStatusTagihan(id);
+      if (data.catatan !== undefined) {
+        db.prepare('UPDATE tagihan SET catatan = ? WHERE id = ?').run(data.catatan, id);
+      }
+    });
+
+    res.json(getTagihan(id));
   });
 
   // WBS 2.3 (jalan pintas): lunasi SISA tagihan dalam 1 pembayaran. Bayar langsung 1 bulan = cukup ini.
@@ -872,8 +1081,21 @@ export function createApp() {
   app.put('/api/keluhan/:id/status', handleUpdateStatusKeluhan);
   // Keluhan sengaja tidak bisa dihapus (MOV: 100% keluhan tercatat); laporan ganda ditutup Selesai dengan catatan.
 
-  // ---------- Error handling ----------
+  // ---------- Error handling & Frontend Produksi ----------
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Endpoint tidak ditemukan.')));
+
+  const distDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist');
+  if (existsSync(join(distDir, 'index.html'))) {
+    app.use(express.static(distDir));
+    app.use((req, res, next) => {
+      if (req.method === 'GET' && !req.path.startsWith('/api')) {
+        res.sendFile(join(distDir, 'index.html'));
+        return;
+      }
+      next();
+    });
+  }
+
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof HttpError) {
       res.status(err.status).json({ message: err.message, errors: err.errors });

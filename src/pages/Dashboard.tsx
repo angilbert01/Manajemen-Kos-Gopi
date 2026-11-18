@@ -1,8 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { BedDouble, Building2, LayoutGrid, MessageSquareWarning, Plus, UserPlus } from 'lucide-react';
-import { api, ApiError, namaBulan, rupiah, tanggal, today } from '../api';
-import type { Kamar, KamarForm, Penghuni, PenghuniForm, Ringkasan } from '../api';
+import {
+  api,
+  ApiError,
+  formatPeriodeSewa,
+  hitungAkhirSewa,
+  namaBulan,
+  PERIODE_SEWA_LIST,
+  rupiah,
+  satuanPeriode,
+  tanggal,
+  today,
+} from '../api';
+import type { Kamar, KamarForm, Penghuni, PenghuniForm, PeriodeSewa, Ringkasan } from '../api';
 import { Field, IconWidget, Modal, Stat, StatusPill, selectClass } from '../components';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -16,14 +27,25 @@ import { trenMasuk } from '@/lib/tren';
 import { cn } from '@/lib/utils';
 
 const PHONE_RE = /^(\+62|62|0)8\d{7,12}$/;
-const TIPE_LIST = ['Standar', 'AC', 'VIP'];
 const blankPenghuni = (kamarId?: number): PenghuniForm => ({
   nama: '',
   no_hp: '',
   kamar_id: kamarId ? String(kamarId) : '',
   tanggal_masuk: today(),
+  periode_sewa: 'Bulanan',
+  durasi_sewa: '1',
+  harga_sewa: '',
+  tanggal_selesai_sewa: '',
 });
-const emptyKamar: KamarForm = { nomor: '', tipe: 'Standar', harga: '', foto_url: '' };
+const emptyKamar: KamarForm = {
+  nomor: '',
+  harga: '',
+  foto_url: '',
+  periode_default: 'Bulanan',
+  harga_harian: '',
+  harga_mingguan: '',
+  harga_tahunan: '',
+};
 
 type Props = {
   go: (page: string, action?: 'tambah', kamarId?: number) => void;
@@ -42,7 +64,7 @@ export default function Dashboard({ go, notify, onChanged }: Props) {
 
   // Filter katalog kamar (WBS 1.2)
   const [filterStatus, setFilterStatus] = useState<'' | 'Kosong' | 'Terisi'>('');
-  const [filterHarga, setFilterHarga] = useState('');
+  const [filterPeriode, setFilterPeriode] = useState('');
   const [searchKamar, setSearchKamar] = useState('');
 
   // Form registrasi penghuni baru (WBS 1.3)
@@ -90,24 +112,35 @@ export default function Dashboard({ go, notify, onChanged }: Props) {
   // Filter katalog kamar secara real-time
   const katalogFiltered = kamarList.filter((k) => {
     if (filterStatus && k.status !== filterStatus) return false;
-    if (filterHarga && k.harga > Number(filterHarga)) return false;
+    if (filterPeriode && (k.periode_default ?? 'Bulanan') !== filterPeriode) return false;
     if (searchKamar.trim()) {
       const q = searchKamar.toLowerCase();
-      if (!`${k.nomor} ${k.tipe} ${k.penghuni_nama ?? ''}`.toLowerCase().includes(q)) return false;
+      if (!`${k.nomor} ${k.periode_default ?? ''} ${k.penghuni_nama ?? ''}`.toLowerCase().includes(q)) return false;
     }
     return true;
   });
 
   const kamarKosongList = kamarList.filter((k) => k.status === 'Kosong');
 
-  const tipeStats = TIPE_LIST.map((tipe) => {
-    const all = kamarList.filter((k) => k.tipe === tipe);
+  const tipeStats = PERIODE_SEWA_LIST.map((periode) => {
+    const all = kamarList.filter((k) => (k.penghuni_periode_sewa ?? k.periode_default ?? 'Bulanan') === periode);
     const occ = all.filter((k) => k.status === 'Terisi').length;
-    return { tipe, total: all.length, occ, pct: all.length ? Math.round((occ / all.length) * 100) : 0 };
+    return { tipe: periode, total: all.length, occ, pct: all.length ? Math.round((occ / all.length) * 100) : 0 };
   });
 
   const setField = (k: keyof PenghuniForm) => (e: { target: { value: string } }) =>
     setForm({ ...form, [k]: e.target.value });
+
+  const pilihKamarDanSewa = (kamarIdStr: string, periode: PeriodeSewa, durasiStr: string, tglMasuk: string) => {
+    const durasi = Math.max(1, Number(durasiStr) || 1);
+    setForm((prev) => ({
+      ...prev,
+      kamar_id: kamarIdStr,
+      periode_sewa: periode,
+      durasi_sewa: String(durasi),
+      tanggal_selesai_sewa: hitungAkhirSewa(tglMasuk, periode, durasi),
+    }));
+  };
 
   // Submit registrasi penghuni -> POST /api/penghuni -> kamar otomatis jadi Terisi
   const submitPenghuni = async (e: FormEvent) => {
@@ -119,6 +152,9 @@ export default function Dashboard({ go, notify, onChanged }: Props) {
       local.no_hp = 'Nomor HP tidak valid (contoh: 081234567890).';
     if (!form.kamar_id) local.kamar_id = 'Pilih kamar kosong.';
     if (!form.tanggal_masuk) local.tanggal_masuk = 'Tanggal masuk wajib diisi.';
+    const dur = Number(form.durasi_sewa || 1);
+    if (!Number.isInteger(dur) || dur < 1) local.durasi_sewa = 'Lama penyewaan minimal 1.';
+    if (!form.harga_sewa || !(Number(form.harga_sewa) > 0)) local.harga_sewa = 'Masukkan nominal tagihan sewa (Rp).';
     setErrors(local);
     if (Object.keys(local).length) return;
 
@@ -260,7 +296,7 @@ export default function Dashboard({ go, notify, onChanged }: Props) {
               <Input
                 type="search"
                 className="sm:flex-1"
-                placeholder="Cari nomor, tipe, atau nama penghuni..."
+                placeholder="Cari nomor kamar atau nama penghuni..."
                 aria-label="Cari kamar"
                 value={searchKamar}
                 onChange={(e) => setSearchKamar(e.target.value)}
@@ -276,15 +312,15 @@ export default function Dashboard({ go, notify, onChanged }: Props) {
                 <option value="Terisi">Terisi ({terisi})</option>
               </select>
               <select
-                aria-label="Filter harga maksimal"
-                className={`${selectClass} sm:w-40`}
-                value={filterHarga}
-                onChange={(e) => setFilterHarga(e.target.value)}
+                aria-label="Filter jangka sewa"
+                className={`${selectClass} sm:w-44`}
+                value={filterPeriode}
+                onChange={(e) => setFilterPeriode(e.target.value)}
               >
-                <option value="">Semua harga</option>
-                <option value="1000000">≤ Rp 1.000.000</option>
-                <option value="1300000">≤ Rp 1.300.000</option>
-                <option value="2000000">≤ Rp 2.000.000</option>
+                <option value="">Semua jangka sewa</option>
+                {PERIODE_SEWA_LIST.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
               </select>
             </div>
 
@@ -316,22 +352,29 @@ export default function Dashboard({ go, notify, onChanged }: Props) {
                           <span className="truncate font-medium">{k.nomor}</span>
                           <StatusPill status={k.status} />
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                          Tipe {k.tipe} · {rupiah(k.harga)}/bln
-                        </p>
                         {k.status === 'Terisi' ? (
-                          <p className="truncate text-sm">
-                            Penghuni: <span className="font-medium">{k.penghuni_nama ?? 'Terisi'}</span>
-                          </p>
+                          <div className="space-y-0.5 text-sm">
+                            <p className="truncate">
+                              Penghuni: <span className="font-medium">{k.penghuni_nama ?? 'Terisi'}</span>
+                            </p>
+                            <p className="text-xs text-muted-foreground tabular-nums">
+                              {rupiah(k.penghuni_harga_sewa ?? k.harga)} · {formatPeriodeSewa(k.penghuni_periode_sewa ?? 'Bulanan', k.penghuni_durasi_sewa ?? 1)}
+                            </p>
+                          </div>
                         ) : (
-                          <Button
-                            size="sm"
-                            variant={isSelected ? 'outline' : 'default'}
-                            className="mt-auto self-start"
-                            onClick={() => setForm((f) => ({ ...f, kamar_id: String(k.id) }))}
-                          >
-                            {isSelected ? 'Dipilih di Form ✓' : 'Pilih Kamar Ini'}
-                          </Button>
+                          <>
+                            <p className="text-xs text-muted-foreground">
+                              Siap disewakan · Harian / Mingguan / Bulanan / Tahunan
+                            </p>
+                            <Button
+                              size="sm"
+                              variant={isSelected ? 'outline' : 'default'}
+                              className="mt-auto self-start"
+                              onClick={() => pilihKamarDanSewa(String(k.id), (form.periode_sewa || 'Bulanan') as PeriodeSewa, form.durasi_sewa || '1', form.tanggal_masuk)}
+                            >
+                              {isSelected ? 'Dipilih di Form ✓' : 'Pilih Kamar Ini'}
+                            </Button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -381,18 +424,73 @@ export default function Dashboard({ go, notify, onChanged }: Props) {
                 />
               </Field>
               <Field label="Pilih kamar *" error={errors.kamar_id} hint="Kamar berstatus Terisi otomatis dikunci">
-                <select className={selectClass} value={form.kamar_id} onChange={setField('kamar_id')} aria-invalid={!!errors.kamar_id}>
+                <select
+                  className={selectClass}
+                  value={form.kamar_id}
+                  onChange={(e) => pilihKamarDanSewa(e.target.value, (form.periode_sewa || 'Bulanan') as PeriodeSewa, form.durasi_sewa || '1', form.tanggal_masuk)}
+                  aria-invalid={!!errors.kamar_id}
+                >
                   <option value="">-- Pilih kamar kosong --</option>
                   {kamarList.map((k) => (
                     <option key={k.id} value={k.id} disabled={k.status === 'Terisi'}>
-                      {k.nomor} · {k.tipe} · {rupiah(k.harga)}
-                      {k.status === 'Terisi' ? ` (Terisi - ${k.penghuni_nama ?? ''})` : ' (Kosong)'}
+                      {k.nomor} {k.status === 'Terisi' ? `(Terisi - ${k.penghuni_nama ?? ''})` : '(Kosong)'}
                     </option>
                   ))}
                 </select>
               </Field>
-              <Field label="Tanggal mulai sewa *" error={errors.tanggal_masuk}>
-                <Input type="date" value={form.tanggal_masuk} onChange={setField('tanggal_masuk')} aria-invalid={!!errors.tanggal_masuk} />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Jangka penyewaan *" error={errors.periode_sewa}>
+                  <select
+                    className={selectClass}
+                    value={form.periode_sewa ?? 'Bulanan'}
+                    onChange={(e) => pilihKamarDanSewa(form.kamar_id, e.target.value as PeriodeSewa, form.durasi_sewa || '1', form.tanggal_masuk)}
+                  >
+                    {PERIODE_SEWA_LIST.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label={`Lama (${satuanPeriode(form.periode_sewa)}) *`} error={errors.durasi_sewa}>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={3650}
+                    value={form.durasi_sewa ?? '1'}
+                    onChange={(e) => pilihKamarDanSewa(form.kamar_id, (form.periode_sewa ?? 'Bulanan') as PeriodeSewa, e.target.value, form.tanggal_masuk)}
+                    aria-invalid={!!errors.durasi_sewa}
+                  />
+                </Field>
+              </div>
+              <Field label="Nominal tagihan sewa (Rp) *" error={errors.harga_sewa} hint="Masukkan sendiri nominal tagihan sesuai kesepakatan">
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  step={10000}
+                  value={form.harga_sewa ?? ''}
+                  onChange={setField('harga_sewa')}
+                  placeholder="Masukkan nominal, mis. 750000"
+                  aria-invalid={!!errors.harga_sewa}
+                />
+              </Field>
+              <Field
+                label="Tanggal mulai sewa *"
+                error={errors.tanggal_masuk}
+                hint={`Berakhir ${tanggal(form.tanggal_selesai_sewa || hitungAkhirSewa(form.tanggal_masuk, (form.periode_sewa ?? 'Bulanan') as PeriodeSewa, Number(form.durasi_sewa || 1)))}`}
+              >
+                <Input
+                  type="date"
+                  value={form.tanggal_masuk}
+                  onChange={(e) => {
+                    const tgl = e.target.value;
+                    setForm((prev) => ({
+                      ...prev,
+                      tanggal_masuk: tgl,
+                      tanggal_selesai_sewa: hitungAkhirSewa(tgl, (prev.periode_sewa ?? 'Bulanan') as PeriodeSewa, Number(prev.durasi_sewa || 1)),
+                    }));
+                  }}
+                  aria-invalid={!!errors.tanggal_masuk}
+                />
               </Field>
               <div className="flex justify-end gap-2">
                 <Button
@@ -482,10 +580,15 @@ export default function Dashboard({ go, notify, onChanged }: Props) {
                         </TableCell>
                         <TableCell>
                           <div className="font-medium">{p.kamar_nomor}</div>
-                          {p.kamar_tipe && <div className="text-xs text-muted-foreground">Tipe {p.kamar_tipe}</div>}
                         </TableCell>
-                        <TableCell className="tabular-nums">{p.kamar_harga ? rupiah(p.kamar_harga) : '–'}</TableCell>
-                        <TableCell>{tanggal(p.tanggal_masuk)}</TableCell>
+                        <TableCell className="tabular-nums">
+                          <div>{p.harga_sewa ? rupiah(p.harga_sewa) : p.kamar_harga ? rupiah(p.kamar_harga) : '–'}</div>
+                          <div className="text-xs text-muted-foreground">{formatPeriodeSewa(p.periode_sewa ?? 'Bulanan', p.durasi_sewa ?? 1)}</div>
+                        </TableCell>
+                        <TableCell>
+                          <div>{tanggal(p.tanggal_masuk)}</div>
+                          {p.tanggal_selesai_sewa && <div className="text-xs text-muted-foreground">s/d {tanggal(p.tanggal_selesai_sewa)}</div>}
+                        </TableCell>
                         <TableCell className="text-right">
                           <Button size="sm" variant="outline" onClick={() => catatKeluar(p)}>
                             Catat Keluar
@@ -508,7 +611,7 @@ export default function Dashboard({ go, notify, onChanged }: Props) {
 
         <Card className="h-fit">
           <CardHeader>
-            <CardTitle>Okupansi per Tipe Kamar (Real-Time DB)</CardTitle>
+            <CardTitle>Okupansi per Jangka Sewa (Real-Time DB)</CardTitle>
             <CardAction>
               <Button size="sm" variant="link" className="px-0" onClick={() => go('Kamar')}>
                 Detail
@@ -559,8 +662,6 @@ function TambahKamarModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
     e.preventDefault();
     const local: Record<string, string> = {};
     if (!form.nomor.trim()) local.nomor = 'Nomor kamar wajib diisi.';
-    if (!form.harga) local.harga = 'Harga wajib diisi.';
-    else if (!(Number(form.harga) > 0)) local.harga = 'Harga harus lebih dari 0.';
     setErrors(local);
     if (Object.keys(local).length) return;
     setSaving(true);
@@ -585,30 +686,12 @@ function TambahKamarModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
         <Field label="Nomor kamar *" error={errors.nomor}>
           <Input autoFocus value={form.nomor} onChange={set('nomor')} placeholder="mis. Kamar 13" maxLength={20} aria-invalid={!!errors.nomor} />
         </Field>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Tipe *" error={errors.tipe}>
-            <select className={selectClass} value={form.tipe} onChange={set('tipe')}>
-              {TIPE_LIST.map((t) => (
-                <option key={t}>{t}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Harga per bulan (Rp) *" error={errors.harga}>
-            <Input
-              type="number"
-              inputMode="numeric"
-              min={1}
-              step={50000}
-              value={form.harga}
-              onChange={set('harga')}
-              placeholder="1200000"
-              aria-invalid={!!errors.harga}
-            />
-          </Field>
-        </div>
         <Field label="URL foto (opsional)" error={errors.foto_url}>
           <Input type="url" value={form.foto_url} onChange={set('foto_url')} placeholder="https://..." />
         </Field>
+        <p className="text-xs text-muted-foreground">
+          Nominal tagihan dan jangka penyewaan (Harian, Mingguan, Bulanan, Tahunan) ditentukan langsung saat mendaftarkan penghuni atau membuat tagihan.
+        </p>
         <div className="flex justify-end gap-2">
           <Button type="button" variant="outline" onClick={onClose}>
             Batal

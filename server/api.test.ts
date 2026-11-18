@@ -525,3 +525,197 @@ test('TC-Keluhan-05 [WBS 3.2]: Ringkasan dashboard memuat data keluhan terpadu',
   assert.ok(typeof ringkasan.body.keluhan_aktif === 'number');
   assert.equal(ringkasan.body.keluhan_aktif, ringkasan.body.keluhan_pending + ringkasan.body.keluhan_diproses);
 });
+
+
+// ---------- Revisi Klien: Fleksibilitas Harga & Jangka Sewa (Harian, Mingguan, Bulanan, Tahunan) ----------
+
+test('TC-Sewa-01: Kamar mendukung jangka sewa default & tarif multi-periode (Harian/Mingguan/Tahunan)', async () => {
+  const k = await call('POST', '/kamar', {
+    nomor: 'FLEX-01',
+    tipe: 'VIP',
+    harga: 1500000,
+    periode_default: 'Bulanan',
+    harga_harian: 120000,
+    harga_mingguan: 600000,
+    harga_tahunan: 15000000,
+  });
+  assert.equal(k.status, 201);
+  assert.equal(k.body.periode_default, 'Bulanan');
+  assert.equal(k.body.harga_harian, 120000);
+  assert.equal(k.body.harga_mingguan, 600000);
+  assert.equal(k.body.harga_tahunan, 15000000);
+
+  const u = await call('PUT', `/kamar/${k.body.id}`, {
+    nomor: 'FLEX-01',
+    tipe: 'VIP',
+    harga: 125000,
+    periode_default: 'Harian',
+    harga_harian: 125000,
+    harga_mingguan: 650000,
+    harga_tahunan: 16000000,
+  });
+  assert.equal(u.status, 200);
+  assert.equal(u.body.periode_default, 'Harian');
+  assert.equal(u.body.harga, 125000);
+});
+
+test('TC-Sewa-02: Registrasi penghuni sewa Harian & Mingguan dengan harga kustom membentuk tagihan & tanggal selesai akurat', async () => {
+  const kHarian = await call('POST', '/kamar', { nomor: 'FLEX-HR', tipe: 'AC', harga: 100000, periode_default: 'Harian' });
+  const kMingguan = await call('POST', '/kamar', { nomor: 'FLEX-MGG', tipe: 'AC', harga: 450000, periode_default: 'Mingguan' });
+
+  const todayStr = tanggalJakarta();
+  const bulanIni = todayStr.slice(0, 7);
+
+  const pHarian = await call('POST', '/penghuni', {
+    nama: 'Tamu Harian',
+    no_hp: '081900010001',
+    kamar_id: kHarian.body.id,
+    tanggal_masuk: '2026-10-10',
+    periode_sewa: 'Harian',
+    durasi_sewa: 3,
+    harga_sewa: 330000,
+  });
+  assert.equal(pHarian.status, 201);
+  assert.equal(pHarian.body.periode_sewa, 'Harian');
+  assert.equal(pHarian.body.durasi_sewa, 3);
+  assert.equal(pHarian.body.harga_sewa, 330000);
+  assert.equal(pHarian.body.tanggal_selesai_sewa, '2026-10-13');
+
+  const pMingguan = await call('POST', '/penghuni', {
+    nama: 'Tamu Mingguan',
+    no_hp: '081900010002',
+    kamar_id: kMingguan.body.id,
+    tanggal_masuk: '2026-10-10',
+    periode_sewa: 'Mingguan',
+    durasi_sewa: 2,
+    harga_sewa: 850000,
+  });
+  assert.equal(pMingguan.status, 201);
+  assert.equal(pMingguan.body.periode_sewa, 'Mingguan');
+  assert.equal(pMingguan.body.durasi_sewa, 2);
+  assert.equal(pMingguan.body.harga_sewa, 850000);
+  assert.equal(pMingguan.body.tanggal_selesai_sewa, '2026-10-24');
+
+  const bills = (await call('GET', `/tagihan?bulan=${bulanIni}`)).body as {
+    penghuni_id: number; nominal: number; periode_sewa: string; durasi_sewa: number;
+  }[];
+  const tHarian = bills.find((t) => t.penghuni_id === pHarian.body.id)!;
+  const tMingguan = bills.find((t) => t.penghuni_id === pMingguan.body.id)!;
+  assert.equal(tHarian.nominal, 330000);
+  assert.equal(tHarian.periode_sewa, 'Harian');
+  assert.equal(tHarian.durasi_sewa, 3);
+  assert.equal(tMingguan.nominal, 850000);
+  assert.equal(tMingguan.periode_sewa, 'Mingguan');
+  assert.equal(tMingguan.durasi_sewa, 2);
+});
+
+test('TC-Sewa-03: Atur ulang harga & jangka sewa penghuni aktif memperbarui penghuni dan tagihan aktif', async () => {
+  const k = await call('POST', '/kamar', { nomor: 'FLEX-THN', tipe: 'VIP', harga: 1500000 });
+  const p = await call('POST', '/penghuni', {
+    nama: 'Penghuni Tahunan',
+    no_hp: '081900010003',
+    kamar_id: k.body.id,
+    tanggal_masuk: '2026-01-15',
+    periode_sewa: 'Bulanan',
+    durasi_sewa: 1,
+    harga_sewa: 1500000,
+  });
+  assert.equal(p.status, 201);
+
+  const updated = await call('PATCH', `/penghuni/${p.body.id}/sewa`, {
+    periode_sewa: 'Tahunan',
+    durasi_sewa: 1,
+    harga_sewa: 15500000,
+    update_tagihan: true,
+  });
+  assert.equal(updated.status, 200);
+  assert.equal(updated.body.periode_sewa, 'Tahunan');
+  assert.equal(updated.body.durasi_sewa, 1);
+  assert.equal(updated.body.harga_sewa, 15500000);
+  assert.equal(updated.body.tanggal_selesai_sewa, '2027-01-15');
+
+  const bulanIni = tanggalJakarta().slice(0, 7);
+  const t = (await call('GET', `/tagihan?bulan=${bulanIni}`)).body.find((x: { penghuni_id: number }) => x.penghuni_id === p.body.id);
+  assert.equal(t.nominal, 15500000);
+  assert.equal(t.periode_sewa, 'Tahunan');
+  assert.equal(t.durasi_sewa, 1);
+
+  // Kontrak Tahunan yang masih aktif tidak digandakan tagihannya di bulan berikutnya
+  const nextMonth = generateTagihanBulan('2026-12').tagihan.filter((x) => x.penghuni_id === p.body.id);
+  assert.equal(nextMonth.length, 0);
+});
+
+test('TC-Sewa-04: Atur langsung harga & jangka waktu pada tagihan dan lindungi batas pembayaran yang sudah masuk', async () => {
+  const k = await call('POST', '/kamar', { nomor: 'FLEX-TGH', tipe: 'Standar', harga: 900000 });
+  const p = await call('POST', '/penghuni', {
+    nama: 'Penghuni Negosiasi',
+    no_hp: '081900010004',
+    kamar_id: k.body.id,
+    tanggal_masuk: '2026-10-01',
+    periode_sewa: 'Mingguan',
+    durasi_sewa: 2,
+    harga_sewa: 500000,
+  });
+  const bulanIni = tanggalJakarta().slice(0, 7);
+  const t = (await call('GET', `/tagihan?bulan=${bulanIni}`)).body.find((x: { penghuni_id: number }) => x.penghuni_id === p.body.id);
+
+  // Cicil Rp 300.000
+  assert.equal((await call('POST', `/tagihan/${t.id}/pembayaran`, { jumlah: 300000 })).status, 201);
+
+  // Turunkan nominal tagihan di bawah Rp 300.000 ditolak (422)
+  const terlaluRendah = await call('PATCH', `/tagihan/${t.id}`, { nominal: 250000 });
+  assert.equal(terlaluRendah.status, 422);
+  assert.ok(terlaluRendah.body.errors.nominal);
+
+  // Ubah ke harga negosiasi baru Rp 450.000 & 1 Mingguan -> sisa menjadi Rp 150.000
+  const ubah = await call('PATCH', `/tagihan/${t.id}`, {
+    nominal: 450000,
+    periode_sewa: 'Mingguan',
+    durasi_sewa: 1,
+    catatan: 'Negosiasi 1 minggu saja',
+  });
+  assert.equal(ubah.status, 200);
+  assert.equal(ubah.body.nominal, 450000);
+  assert.equal(ubah.body.sisa, 150000);
+  assert.equal(ubah.body.periode_sewa, 'Mingguan');
+  assert.equal(ubah.body.durasi_sewa, 1);
+  assert.equal(ubah.body.catatan, 'Negosiasi 1 minggu saja');
+});
+
+
+test('TC-Sewa-05: Input manual nominal tagihan dan jangka penyewaan lewat POST /api/tagihan', async () => {
+  const k = await call('POST', '/kamar', { nomor: 'FLEX-MANUAL', tipe: 'Bulanan', harga: 1000000 });
+  const p = await call('POST', '/penghuni', {
+    nama: 'Tamu Manual Tagihan',
+    no_hp: '081900010005',
+    kamar_id: k.body.id,
+    tanggal_masuk: tanggalJakarta(),
+  });
+  assert.equal(p.status, 201);
+
+  const bulanIni = tanggalJakarta().slice(0, 7);
+  // Klien langsung memasukkan nominal tagihan 425000 dengan jangka penyewaan 5 Harian
+  const created = await call('POST', '/tagihan', {
+    penghuni_id: p.body.id,
+    nominal: 425000,
+    periode_sewa: 'Harian',
+    durasi_sewa: 5,
+    bulan: bulanIni,
+    jatuh_tempo: '2026-11-20',
+    catatan: 'Input tagihan langsung oleh pemilik',
+  });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.nominal, 425000);
+  assert.equal(created.body.periode_sewa, 'Harian');
+  assert.equal(created.body.durasi_sewa, 5);
+  assert.equal(created.body.jatuh_tempo, '2026-11-20');
+  assert.equal(created.body.catatan, 'Input tagihan langsung oleh pemilik');
+
+  // Penghuni juga terupdate jangka sewanya menjadi 5 Harian
+  const daftarP = (await call('GET', '/penghuni')).body as { id: number; harga_sewa: number; periode_sewa: string; durasi_sewa: number; tanggal_selesai_sewa: string }[];
+  const pm = daftarP.find((x) => x.id === p.body.id)!;
+  assert.equal(pm.harga_sewa, 425000);
+  assert.equal(pm.periode_sewa, 'Harian');
+  assert.equal(pm.durasi_sewa, 5);
+  assert.equal(pm.tanggal_selesai_sewa, '2026-11-25');
+});

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-import { BellRing, Check, CircleAlert, CreditCard, Link2, LoaderCircle, MessageCircle, Printer, Receipt, RefreshCw, Search, Trash2, Undo2 } from 'lucide-react';
-import { api, ApiError, namaBulan, rupiah, tanggal, today, waLink } from '../api';
-import type { AdminProfile, Pembayaran, PengingatTagihan, RekapTagihan, Tagihan } from '../api';
+import { BellRing, Check, CircleAlert, CreditCard, Link2, LoaderCircle, MessageCircle, Plus, Printer, Receipt, RefreshCw, Search, SlidersHorizontal, Trash2, Undo2 } from 'lucide-react';
+import { api, ApiError, formatPeriodeSewa, namaBulan, PERIODE_SEWA_LIST, rupiah, satuanPeriode, tanggal, today, waLink } from '../api';
+import type { AdminProfile, Pembayaran, PengingatTagihan, Penghuni, PeriodeSewa, RekapTagihan, Tagihan } from '../api';
 import { Field, Modal, selectClass } from '../components';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -41,6 +41,8 @@ export default function TagihanPage({ notify, onChanged }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [payment, setPayment] = useState<Tagihan | null>(null);
+  const [creatingBill, setCreatingBill] = useState(false);
+  const [editingBill, setEditingBill] = useState<Tagihan | null>(null);
   const [receipt, setReceipt] = useState<Tagihan | null>(null);
   const [pengingat, setPengingat] = useState<PengingatTagihan[]>([]);
 
@@ -121,6 +123,9 @@ export default function TagihanPage({ notify, onChanged }: Props) {
           <Button size="sm" disabled={busy} onClick={() => setPayment(tagihan)}>
             <CreditCard /> {tagihan.status_bayar === 'Dicicil' ? 'Lanjut Bayar' : 'Catat Bayar'}
           </Button>
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => setEditingBill(tagihan)} aria-label={'Atur nominal dan jangka penyewaan untuk ' + tagihan.penghuni_nama}>
+            <SlidersHorizontal /> Atur Nominal & Jangka Sewa
+          </Button>
           <Button size="sm" variant="outline" asChild>
             <a href={waLink(tagihan.penghuni_no_hp, pesanWa(tagihan))} target="_blank" rel="noopener noreferrer" aria-label={'Siapkan pengingat WhatsApp untuk ' + tagihan.penghuni_nama}>
               <MessageCircle /> <span className="md:sr-only">WhatsApp</span>
@@ -159,6 +164,9 @@ export default function TagihanPage({ notify, onChanged }: Props) {
               <Field label="Periode tagihan">
                 <Input type="month" value={bulan} max={today().slice(0, 7)} onChange={(e) => { if (/^(?!0000)[0-9]{4}-(0[1-9]|1[0-2])$/.test(e.target.value)) setBulan(e.target.value); }} className="w-44" />
               </Field>
+              <Button variant="outline" disabled={busy} onClick={() => setCreatingBill(true)}>
+                <Plus /> Input Tagihan & Jangka Sewa
+              </Button>
               <Button disabled={busy} onClick={generate}>
                 <RefreshCw className={busy ? 'animate-spin' : ''} /> {busy ? 'Memproses…' : 'Buat Tagihan'}
               </Button>
@@ -232,7 +240,7 @@ export default function TagihanPage({ notify, onChanged }: Props) {
             <div className="grid gap-3 md:hidden">
               {list.map((tagihan) => <Card key={tagihan.id} className="py-4"><CardContent className="space-y-3 px-4">
                 <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0"><p className="break-words font-semibold">{tagihan.penghuni_nama}</p><p className="text-sm text-muted-foreground">{tagihan.kamar_nomor} · {tagihan.kamar_tipe}</p></div>
+                  <div className="min-w-0"><p className="break-words font-semibold">{tagihan.penghuni_nama}</p><p className="text-sm text-muted-foreground">{tagihan.kamar_nomor} · {formatPeriodeSewa(tagihan.periode_sewa, tagihan.durasi_sewa)}</p></div>
                   <Status tagihan={tagihan} />
                 </div>
                 <dl className="grid grid-cols-2 gap-2 text-sm">
@@ -247,7 +255,7 @@ export default function TagihanPage({ notify, onChanged }: Props) {
             <Card className="hidden min-w-0 py-0 md:block"><CardContent className="p-0"><Table>
               <TableHeader><TableRow><TableHead>Penghuni / Kamar</TableHead><TableHead>Tagihan</TableHead><TableHead>Sisa</TableHead><TableHead>Jatuh Tempo</TableHead><TableHead>Status</TableHead><TableHead>Aksi</TableHead></TableRow></TableHeader>
               <TableBody>{list.map((tagihan) => <TableRow key={tagihan.id}>
-                <TableCell><p className="font-medium">{tagihan.penghuni_nama}</p><p className="text-xs text-muted-foreground">{tagihan.kamar_nomor} · {tagihan.kamar_tipe}</p></TableCell>
+                <TableCell><p className="font-medium">{tagihan.penghuni_nama}</p><p className="text-xs text-muted-foreground">{tagihan.kamar_nomor} · {formatPeriodeSewa(tagihan.periode_sewa, tagihan.durasi_sewa)}</p></TableCell>
                 <TableCell className="tabular-nums">{rupiah(tagihan.nominal)}<p className="text-xs text-muted-foreground">Dibayar {rupiah(tagihan.terbayar)}</p></TableCell>
                 <TableCell className="font-medium tabular-nums">{rupiah(tagihan.sisa)}</TableCell>
                 <TableCell className={tagihan.sisa > 0 && tagihan.jatuh_tempo < today() ? 'text-destructive' : ''}>{tanggal(tagihan.jatuh_tempo)}</TableCell>
@@ -256,8 +264,194 @@ export default function TagihanPage({ notify, onChanged }: Props) {
             </Table></CardContent></Card>
           </>}
       {payment && <PaymentModal tagihan={payment} onClose={() => { setPayment(null); refresh(); }} onSaved={() => { setPayment(null); notify('Pembayaran tersimpan. Rekap sudah diperbarui.'); refresh(); }} />}
+      {creatingBill && <InputTagihanModal bulan={bulan} onClose={() => setCreatingBill(false)} onSaved={() => { setCreatingBill(false); notify('Tagihan dan jangka penyewaan tersimpan.'); refresh(); }} />}
+      {editingBill && <EditTagihanModal tagihan={editingBill} onClose={() => setEditingBill(null)} onSaved={() => { setEditingBill(null); notify('Nominal dan jangka penyewaan tagihan diperbarui.'); refresh(); }} />}
       {receipt && <ReceiptModal tagihan={receipt} admin={admin} onClose={() => setReceipt(null)} />}
     </section>
+  );
+}
+
+function InputTagihanModal({ bulan, onClose, onSaved }: { bulan: string; onClose: () => void; onSaved: () => void }) {
+  const [penghuniList, setPenghuniList] = useState<Penghuni[]>([]);
+  const [penghuniId, setPenghuniId] = useState('');
+  const [periode, setPeriode] = useState<PeriodeSewa>('Bulanan');
+  const [durasi, setDurasi] = useState('1');
+  const [nominal, setNominal] = useState('');
+  const [jatuhTempo, setJatuhTempo] = useState(today());
+  const [catatan, setCatatan] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    api.penghuni.list(false).then((rows) => { if (!cancelled) setPenghuniList(rows); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    const pid = Number(penghuniId);
+    const n = Number(nominal);
+    const d = Number(durasi);
+    const local: Record<string, string> = {};
+    if (!Number.isInteger(pid) || pid <= 0) local.penghuni_id = 'Pilih penghuni terlebih dahulu.';
+    if (!nominal || !Number.isSafeInteger(n) || n <= 0) local.nominal = 'Masukkan nominal tagihan (lebih dari 0).';
+    if (!Number.isInteger(d) || d < 1) local.durasi_sewa = 'Lama penyewaan minimal 1.';
+    if (!jatuhTempo) local.jatuh_tempo = 'Jatuh tempo wajib diisi.';
+    setErrors(local);
+    if (Object.keys(local).length) return;
+    setSaving(true);
+    try {
+      await api.tagihan.create({
+        penghuni_id: pid,
+        nominal: n,
+        periode_sewa: periode,
+        durasi_sewa: d,
+        bulan,
+        jatuh_tempo: jatuhTempo,
+        catatan,
+      });
+      onSaved();
+    } catch (err) {
+      setErrors(err instanceof ApiError && Object.keys(err.errors).length ? err.errors : { _: (err as Error).message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title="Input Nominal Tagihan & Jangka Sewa" onClose={onClose}>
+      <form className="grid gap-4" onSubmit={submit} noValidate>
+        <p className="text-sm text-muted-foreground">
+          Masukkan langsung nominal tagihan dan jangka penyewaan ({namaBulan(bulan)}).
+        </p>
+        {errors._ && <Alert variant="destructive"><AlertDescription>{errors._}</AlertDescription></Alert>}
+        <Field label="Pilih penghuni & kamar *" error={errors.penghuni_id}>
+          <select className={selectClass} value={penghuniId} onChange={(e) => setPenghuniId(e.target.value)} aria-invalid={!!errors.penghuni_id}>
+            <option value="">-- Pilih penghuni aktif --</option>
+            {penghuniList.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.nama} · {p.kamar_nomor}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Jangka penyewaan *" error={errors.periode_sewa}>
+            <select className={selectClass} value={periode} onChange={(e) => setPeriode(e.target.value as PeriodeSewa)}>
+              {PERIODE_SEWA_LIST.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label={`Lama (${satuanPeriode(periode)}) *`} error={errors.durasi_sewa}>
+            <Input type="number" min={1} max={3650} value={durasi} onChange={(e) => setDurasi(e.target.value)} aria-invalid={!!errors.durasi_sewa} />
+          </Field>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Nominal tagihan (Rp) *" error={errors.nominal}>
+            <Input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              step={10000}
+              value={nominal}
+              onChange={(e) => setNominal(e.target.value)}
+              placeholder="mis. 500000"
+              aria-invalid={!!errors.nominal}
+            />
+          </Field>
+          <Field label="Jatuh tempo *" error={errors.jatuh_tempo}>
+            <Input type="date" value={jatuhTempo} onChange={(e) => setJatuhTempo(e.target.value)} aria-invalid={!!errors.jatuh_tempo} />
+          </Field>
+        </div>
+        <Field label="Catatan (opsional)" error={errors.catatan}>
+          <Input value={catatan} onChange={(e) => setCatatan(e.target.value)} maxLength={500} placeholder="mis. Sewa mingguan kamar atas" />
+        </Field>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onClose}>Batal</Button>
+          <Button type="submit" disabled={saving}>{saving ? 'Menyimpan...' : 'Simpan Tagihan'}</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function EditTagihanModal({ tagihan, onClose, onSaved }: { tagihan: Tagihan; onClose: () => void; onSaved: () => void }) {
+  const [nominal, setNominal] = useState(String(tagihan.nominal));
+  const [periode, setPeriode] = useState<PeriodeSewa>(tagihan.periode_sewa ?? 'Bulanan');
+  const [durasi, setDurasi] = useState(String(tagihan.durasi_sewa ?? 1));
+  const [jatuhTempo, setJatuhTempo] = useState(tagihan.jatuh_tempo);
+  const [catatan, setCatatan] = useState(tagihan.catatan ?? '');
+  const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    const n = Number(nominal);
+    const d = Number(durasi);
+    const local: Record<string, string> = {};
+    if (!Number.isSafeInteger(n) || n < Math.max(1, tagihan.terbayar)) {
+      local.nominal = tagihan.terbayar > 0 ? `Nominal minimal ${rupiah(tagihan.terbayar)} (sudah terbayar).` : 'Nominal harus lebih dari 0.';
+    }
+    if (!Number.isInteger(d) || d < 1) local.durasi_sewa = 'Lama sewa minimal 1.';
+    if (!jatuhTempo) local.jatuh_tempo = 'Jatuh tempo wajib diisi.';
+    setErrors(local);
+    if (Object.keys(local).length) return;
+    setSaving(true);
+    try {
+      await api.tagihan.update(tagihan.id, {
+        nominal: n,
+        periode_sewa: periode,
+        durasi_sewa: d,
+        jatuh_tempo: jatuhTempo,
+        catatan,
+      });
+      onSaved();
+    } catch (err) {
+      setErrors(err instanceof ApiError && Object.keys(err.errors).length ? err.errors : { _: (err as Error).message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title="Atur Harga & Jangka Sewa Tagihan" onClose={onClose}>
+      <form className="grid gap-4" onSubmit={submit} noValidate>
+        <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+          <p className="font-medium">{tagihan.penghuni_nama} · {tagihan.kamar_nomor}</p>
+          <p className="text-xs text-muted-foreground">Periode {namaBulan(tagihan.bulan)} · Sudah dibayar {rupiah(tagihan.terbayar)}</p>
+        </div>
+        {errors._ && <Alert variant="destructive"><AlertDescription>{errors._}</AlertDescription></Alert>}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Jangka waktu sewa *" error={errors.periode_sewa}>
+            <select className={selectClass} value={periode} onChange={(e) => setPeriode(e.target.value as PeriodeSewa)}>
+              {PERIODE_SEWA_LIST.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label={`Lama (${satuanPeriode(periode)}) *`} error={errors.durasi_sewa}>
+            <Input type="number" min={1} max={3650} value={durasi} onChange={(e) => setDurasi(e.target.value)} aria-invalid={!!errors.durasi_sewa} />
+          </Field>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Nominal tagihan (Rp) *" error={errors.nominal}>
+            <Input type="number" inputMode="numeric" min={Math.max(1, tagihan.terbayar)} step={10000} value={nominal} onChange={(e) => setNominal(e.target.value)} aria-invalid={!!errors.nominal} />
+          </Field>
+          <Field label="Jatuh tempo *" error={errors.jatuh_tempo}>
+            <Input type="date" value={jatuhTempo} onChange={(e) => setJatuhTempo(e.target.value)} aria-invalid={!!errors.jatuh_tempo} />
+          </Field>
+        </div>
+        <Field label="Catatan (opsional)" error={errors.catatan}>
+          <Input value={catatan} onChange={(e) => setCatatan(e.target.value)} maxLength={500} placeholder="mis. Penyesuaian sewa mingguan" />
+        </Field>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onClose}>Batal</Button>
+          <Button type="submit" disabled={saving}>{saving ? 'Menyimpan...' : 'Simpan Perubahan'}</Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -345,7 +539,7 @@ function ReceiptModal({ tagihan, admin, onClose }: { tagihan: Tagihan; admin: Ad
   return <Modal title="Kuitansi Pembayaran" onClose={onClose}>
     <article className="receipt-print-area space-y-4 rounded-lg border p-4 text-sm">
       <header className="space-y-1 border-b pb-3"><p className="text-xl font-semibold">{admin?.nama_kos || 'Kos Gopi'}</p>{admin?.alamat_kos && <p className="text-muted-foreground">{admin.alamat_kos}</p>}<p className="text-xs text-muted-foreground">{'INV-' + tagihan.bulan.replace('-', '') + '-' + tagihan.id}</p><Status tagihan={tagihan} /></header>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2"><dt className="text-muted-foreground">Diterima dari</dt><dd className="break-words font-medium">{tagihan.penghuni_nama}</dd><dt className="text-muted-foreground">Kamar</dt><dd>{tagihan.kamar_nomor}</dd><dt className="text-muted-foreground">Periode</dt><dd>{namaBulan(tagihan.bulan)}</dd></dl>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2"><dt className="text-muted-foreground">Diterima dari</dt><dd className="break-words font-medium">{tagihan.penghuni_nama}</dd><dt className="text-muted-foreground">Kamar</dt><dd>{tagihan.kamar_nomor}</dd><dt className="text-muted-foreground">Periode</dt><dd>{namaBulan(tagihan.bulan)} ({formatPeriodeSewa(tagihan.periode_sewa, tagihan.durasi_sewa)})</dd></dl>
       <div className="space-y-2 rounded-md bg-muted/50 p-3 tabular-nums"><p className="flex justify-between gap-2"><span>Total tagihan</span><strong>{rupiah(tagihan.nominal)}</strong></p><p className="flex justify-between gap-2"><span>Sudah diterima</span><strong>{rupiah(tagihan.terbayar)}</strong></p><p className="flex justify-between gap-2 border-t pt-2"><span>Sisa tagihan</span><strong>{rupiah(tagihan.sisa)}</strong></p></div>
       {error ? <p role="alert" className="text-destructive">Riwayat tidak dapat dimuat: {error}</p> : !history ? <p role="status">Memuat riwayat pembayaran…</p> : <div className="space-y-2"><p className="font-medium">Rincian pembayaran</p>{history.map((row) => <div key={row.id} className="border-b pb-2"><p className="flex justify-between gap-2"><span>{tanggal(row.tanggal_bayar)}</span><strong className="tabular-nums">{rupiah(row.jumlah)}</strong></p><p className="text-xs text-muted-foreground">{row.metode_pembayaran}</p>{row.catatan && <p className="break-words text-xs">{row.catatan}</p>}</div>)}</div>}
       <footer className="border-t pt-3 text-xs text-muted-foreground"><p>{tagihan.status === 'Lunas' ? 'Terima kasih atas pembayaran Anda.' : 'Bukti pembayaran sebagian. Sisa tagihan belum lunas.'}</p><p className="mt-3 font-medium text-foreground">{admin?.nama || 'Pengelola Kos'}</p></footer>

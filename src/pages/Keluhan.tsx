@@ -508,7 +508,7 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
                     <option value="">-- Pilih Kamar --</option>
                     {kamarList.map((k) => (
                       <option key={k.id} value={k.id}>
-                        {k.nomor} ({k.tipe}) — {k.penghuni_id ? k.penghuni_nama : 'Kamar kosong'}
+                        {k.nomor} — {k.penghuni_id ? k.penghuni_nama : 'Kamar kosong'}
                       </option>
                     ))}
                   </select>
@@ -701,7 +701,7 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
                           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                             <span className="flex items-center gap-1 font-medium text-foreground">
                               <Home className="size-3" aria-hidden />
-                              {k.kamar_nomor} ({k.kamar_tipe})
+                              {k.kamar_nomor}
                             </span>
                             <span>•</span>
                             <span className="flex items-center gap-1">
@@ -959,9 +959,7 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div>
                 <span className="text-muted-foreground">Kamar:</span>
-                <p className="font-medium">
-                  {detailKeluhan.kamar_nomor} ({detailKeluhan.kamar_tipe})
-                </p>
+                <p className="font-medium">{detailKeluhan.kamar_nomor}</p>
               </div>
               <div>
                 <span className="text-muted-foreground">Penghuni:</span>

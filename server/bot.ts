@@ -45,7 +45,11 @@ async function kirimDaftarTagihan(chatId: string, penghuniId: number, kirim: Kir
   const daftar = tagihanTerbuka(penghuniId);
   if (!daftar.length) return kirim(chatId, 'Tidak ada tagihan yang belum lunas. Terima kasih!');
   if (untukBayar && daftar.length === 1) return kirimLinkBayar(chatId, penghuniId, daftar[0]!.id as number, kirim);
-  const baris = daftar.map((t) => `• ${t.kamar_nomor} periode ${t.bulan}: sisa ${rp(t.sisa)}, jatuh tempo ${t.jatuh_tempo}`);
+  const labelSewa = (t: Row) =>
+    t.periode_sewa && (t.periode_sewa !== 'Bulanan' || Number(t.durasi_sewa ?? 1) > 1)
+      ? ` [${t.durasi_sewa ?? 1} ${t.periode_sewa}]`
+      : '';
+  const baris = daftar.map((t) => `• ${t.kamar_nomor} periode ${t.bulan}${labelSewa(t)}: sisa ${rp(t.sisa)}, jatuh tempo ${t.jatuh_tempo}`);
   return kirim(chatId, `Tagihan belum lunas:\n${baris.join('\n')}\n\nPilih tagihan yang ingin dibayar:`,
     daftar.map((t) => ({ teks: `Bayar ${t.bulan} (${rp(t.sisa)})`, data: `bayar:${t.id}` })));
 }
