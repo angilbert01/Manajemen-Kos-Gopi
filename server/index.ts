@@ -1,7 +1,20 @@
+<<<<<<< Updated upstream
 import { createApp, daftarPengingat, generateTagihanBulan } from './app.ts';
 import { DB_PATH, migrate } from './db.ts';
 import { tanggalJakarta } from './dates.ts';
 import { kirimKonfirmasiBayar, kirimPengingatChat, tanganiPesan } from './bot.ts';
+=======
+import { appHooks, createApp, daftarPengingat, generateTagihanBulan } from './app.ts';
+import { DB_PATH, migrate } from './db.ts';
+import { tanggalJakarta } from './dates.ts';
+import {
+  kirimKonfirmasiBayar,
+  kirimNotifikasiTagihanBaru,
+  kirimPengingatChat,
+  kirimUpdateStatusKeluhan,
+  tanganiPesan,
+} from './bot.ts';
+>>>>>>> Stashed changes
 import type { Kirim } from './bot.ts';
 import { hooks, periksaTransaksiPending, providerAktif } from './pembayaran-online.ts';
 import { jalankanPolling, kirimTelegram } from './telegram.ts';
@@ -19,6 +32,13 @@ if (kirim) {
   void jalankanPolling(TOKEN, (pesan) => tanganiPesan(pesan, kirim));
   // WBS 5.4: penghuni langsung menerima konfirmasi saat pembayaran online tercatat.
   hooks.berhasil = (tagihan) => { kirimKonfirmasiBayar(tagihan, kirim).catch((err) => console.error('[telegram] konfirmasi gagal', err)); };
+<<<<<<< Updated upstream
+=======
+  appHooks.kirimTelegram = kirim;
+  appHooks.pembayaranDicatat = (tagihan) => { kirimKonfirmasiBayar(tagihan, kirim).catch((err) => console.error('[telegram] konfirmasi bayar gagal', err)); };
+  appHooks.tagihanUpdated = (tagihan) => { kirimNotifikasiTagihanBaru(tagihan, kirim).catch((err) => console.error('[telegram] info tagihan gagal', err)); };
+  appHooks.keluhanStatusChanged = (keluhan) => { kirimUpdateStatusKeluhan(keluhan, kirim).catch((err) => console.error('[telegram] notif keluhan gagal', err)); };
+>>>>>>> Stashed changes
 }
 console.log(`[chatbot] ${kirim ? 'Telegram aktif' : 'nonaktif (isi TELEGRAM_BOT_TOKEN di .env)'} · pembayaran online: ${providerAktif()}`);
 
@@ -32,8 +52,13 @@ const generateBulanBerjalan = () => {
     console.error('[tagihan] Gagal membuat tagihan; akan dicoba lagi pada pemeriksaan berikutnya.', err);
   }
 };
+<<<<<<< Updated upstream
 // WBS 4.1: sekali per hari (WIB) picu pengingat H-3/H-0/terlambat. Terkirim lewat chatbot ke penghuni yang
 // chat-nya terhubung; sisanya lewat tombol WhatsApp di halaman Tagihan.
+=======
+// WBS 4.1: sekali per hari (WIB) picu pengingat H-3/H-0/terlambat langsung lewat Bot Telegram
+// ke penghuni yang chat-nya terhubung (dan tombol kirim manual via Telegram di halaman Tagihan).
+>>>>>>> Stashed changes
 let tanggalPengingat = '';
 const picuPengingat = async () => {
   const hariIni = tanggalJakarta();

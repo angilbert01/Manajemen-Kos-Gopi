@@ -12,8 +12,13 @@ delete process.env.MIDTRANS_SERVER_KEY;
 const dir = mkdtempSync(join(tmpdir(), 'kos-chatbot-'));
 process.env.DB_PATH = join(dir, 'test.db');
 const { migrate, db } = await import('./db.ts');
+<<<<<<< Updated upstream
 const { createApp } = await import('./app.ts');
 const { tanganiPesan, kirimPengingatChat } = await import('./bot.ts');
+=======
+const { appHooks, createApp } = await import('./app.ts');
+const { tanganiPesan, kirimPengingatChat, kirimUpdateStatusKeluhan } = await import('./bot.ts');
+>>>>>>> Stashed changes
 const { petaStatusMidtrans, signatureValid, terapkanStatus, hooks } = await import('./pembayaran-online.ts');
 const { tanggalJakarta } = await import('./dates.ts');
 type Tombol = { teks: string; url?: string; data?: string };
@@ -151,3 +156,120 @@ test('TC-Bot-06 pengingat H-0 terkirim hanya ke penghuni yang chat-nya terhubung
   assert.match((await kirimDan('900', { teks: '/putus' })).teks, /diputus/);
   assert.equal(await kirimPengingatChat(daftar, kirim), 0);
 });
+<<<<<<< Updated upstream
+=======
+
+test('TC-Bot-07 /keluhan menampilkan panduan format dan menyimpan keluhan berformat ke database', async () => {
+  const { body: { kode } } = await call('POST', `/penghuni/${penghuniId}/kode-chat`);
+  await kirimDan('900', { teks: `/hubung ${kode}` });
+
+  const panduan = await kirimDan('900', { teks: '/keluhan' });
+  assert.match(panduan.teks, /Format Lapor Keluhan/);
+  assert.match(panduan.teks, /\/keluhan Judul \| Deskripsi/);
+  assert.match(panduan.teks, /\/keluhan Kategori \| Judul \| Deskripsi \| Prioritas/);
+
+  const kurangPemisah = await kirimDan('900', { teks: '/keluhan Kran bocor' });
+  assert.match(kurangPemisah.teks, /Format belum sesuai/);
+  assert.match(kurangPemisah.teks, /\/keluhan Kran bocor \|/);
+
+  // Format cepat (2 bagian) dan pastikan kata "bayar" di isi keluhan tidak dibelokkan ke /bayar.
+  const cepat = await kirimDan('900', { teks: '/keluhan Lampu redup | Mau bayar listrik tapi saklar konslet' });
+  assert.match(cepat.teks, /berhasil dikirim/);
+  assert.match(cepat.teks, /Pending/);
+
+  // Format lengkap (4 bagian: Kategori | Judul | Deskripsi | Prioritas).
+  const lengkap = await kirimDan('900', {
+    teks: '/keluhan Elektronik & AC | AC bocor | Air menetes deras dari unit indoor | Tinggi',
+  });
+  assert.match(lengkap.teks, /berhasil dikirim/);
+  assert.match(lengkap.teks, /Elektronik & AC/);
+  assert.match(lengkap.teks, /Prioritas: Tinggi/);
+
+  const daftar = (await call('GET', '/keluhan')).body as {
+    id: number; kamar_nomor: string; penghuni_id: number; kategori: string; prioritas: string; judul: string; status: string;
+  }[];
+  assert.equal(daftar.length, 2);
+  const ac = daftar.find((k) => k.judul === 'AC bocor')!;
+  assert.equal(ac.kamar_nomor, 'B01');
+  assert.equal(ac.penghuni_id, penghuniId);
+  assert.equal(ac.kategori, 'Elektronik & AC');
+  assert.equal(ac.prioritas, 'Tinggi');
+  assert.equal(ac.status, 'Pending');
+});
+
+test('TC-Bot-08 /statuskeluhan, /info, dan notifikasi otomatis saat pemilik mengubah status keluhan', async () => {
+  const info = await kirimDan('900', { teks: '/info' });
+  assert.match(info.teks, /B01/);
+  assert.match(info.teks, /Bulanan/);
+
+  const statusList = await kirimDan('900', { teks: '/statuskeluhan' });
+  assert.match(statusList.teks, /AC bocor/);
+  assert.match(statusList.teks, /Lampu redup/);
+
+  const daftar = (await call('GET', '/keluhan')).body as { id: number; judul: string }[];
+  const acId = daftar.find((k) => k.judul === 'AC bocor')!.id;
+
+  appHooks.keluhanStatusChanged = (keluhan) => {
+    void kirimUpdateStatusKeluhan(keluhan, kirim);
+  };
+  pesan.length = 0;
+
+  const upd = await call('PATCH', `/keluhan/${acId}/status`, {
+    status: 'Diproses',
+    catatan_penanganan: 'Teknisi datang besok jam 10',
+  });
+  assert.equal(upd.status, 200);
+  await new Promise((r) => setTimeout(r, 20));
+
+  assert.equal(pesan.length, 1);
+  assert.equal(pesan[0]!.chatId, '900');
+  assert.match(pesan[0]!.teks, /AC bocor/);
+  assert.match(pesan[0]!.teks, /Diproses/);
+  assert.match(pesan[0]!.teks, /Teknisi datang besok jam 10/);
+});
+
+test('TC-Bot-09 endpoint kirim-telegram untuk tagihan, kuitansi, dan keluhan', async () => {
+  appHooks.kirimTelegram = kirim;
+
+  // Penghuni B03 belum terhubung ke Telegram -> 409
+  const tagihanAll = (await call('GET', `/tagihan?bulan=${bulan}`)).body as { id: number; kamar_nomor: string }[];
+  const tB03 = tagihanAll.find((x) => x.kamar_nomor === 'B03')!;
+  const gagal = await call('POST', `/tagihan/${tB03.id}/kirim-telegram`);
+  assert.equal(gagal.status, 409);
+
+  // Budi (B01, chatId 900) sudah terhubung -> kuitansi tagihan Lunas berhasil dikirim
+  pesan.length = 0;
+  const kuitansiRes = await call('POST', `/tagihan/${tagihanId}/kirim-kuitansi-telegram`);
+  assert.equal(kuitansiRes.status, 200);
+  assert.equal(pesan.length, 1);
+  assert.match(pesan[0]!.teks, /KUITANSI PEMBAYARAN/);
+  assert.match(pesan[0]!.teks, /B01/);
+
+  // Buat tagihan belum lunas untuk Budi -> kirim pengingat Telegram + tombol bayar
+  const tBelum = await call('POST', '/tagihan', {
+    penghuni_id: penghuniId,
+    nominal: 1000000,
+    periode_sewa: 'Bulanan',
+    durasi_sewa: 1,
+    bulan: '2026-09',
+    jatuh_tempo: tanggalJakarta(),
+  });
+  assert.equal(tBelum.status, 201);
+  pesan.length = 0;
+  const tgTagihan = await call('POST', `/tagihan/${tBelum.body.id}/kirim-telegram`);
+  assert.equal(tgTagihan.status, 200);
+  assert.equal(pesan.length, 1);
+  assert.match(pesan[0]!.teks, /Pengingat Tagihan/);
+  assert.equal(pesan[0]!.tombol?.[0]?.data, `bayar:${tBelum.body.id}`);
+
+  // Kirim update keluhan lewat endpoint Telegram
+  const keluhans = (await call('GET', '/keluhan')).body as { id: number; judul: string }[];
+  const acId = keluhans.find((k) => k.judul === 'AC bocor')!.id;
+  pesan.length = 0;
+  const tgKeluhan = await call('POST', `/keluhan/${acId}/kirim-telegram`);
+  assert.equal(tgKeluhan.status, 200);
+  assert.equal(pesan.length, 1);
+  assert.match(pesan[0]!.teks, /Update Keluhan/);
+  assert.match(pesan[0]!.teks, /AC bocor/);
+});
+>>>>>>> Stashed changes

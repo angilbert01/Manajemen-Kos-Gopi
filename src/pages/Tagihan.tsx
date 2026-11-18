@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
+<<<<<<< Updated upstream
 import { BellRing, Check, CircleAlert, CreditCard, Link2, LoaderCircle, MessageCircle, Plus, Printer, Receipt, RefreshCw, Search, SlidersHorizontal, Trash2, Undo2 } from 'lucide-react';
 import { api, ApiError, formatPeriodeSewa, namaBulan, PERIODE_SEWA_LIST, rupiah, satuanPeriode, tanggal, today, waLink } from '../api';
+=======
+import { BellRing, Check, CircleAlert, CreditCard, Download, FileDown, Link2, LoaderCircle, Plus, Receipt, RefreshCw, Search, Send, SlidersHorizontal, Trash2, Undo2 } from 'lucide-react';
+import { api, ApiError, formatPeriodeSewa, namaBulan, PERIODE_SEWA_LIST, rupiah, satuanPeriode, tanggal, today } from '../api';
+>>>>>>> Stashed changes
 import type { AdminProfile, Pembayaran, PengingatTagihan, Penghuni, PeriodeSewa, RekapTagihan, Tagihan } from '../api';
 import { Field, Modal, selectClass } from '../components';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -95,6 +100,7 @@ export default function TagihanPage({ notify, onChanged }: Props) {
       refresh();
     } catch (err) { notify((err as Error).message); }
     finally { setBusy(false); }
+<<<<<<< Updated upstream
   };
 
   const undo = async (tagihan: Tagihan) => {
@@ -108,6 +114,30 @@ export default function TagihanPage({ notify, onChanged }: Props) {
   const pesanWa = (tagihan: Tagihan) =>
     'Halo ' + tagihan.penghuni_nama + ', pengingat sewa ' + (admin?.nama_kos || 'Kos Gopi') + ' kamar ' + tagihan.kamar_nomor + ' periode ' + namaBulan(tagihan.bulan) + '. Sisa tagihan ' + rupiah(tagihan.sisa) + ', jatuh tempo ' + tanggal(tagihan.jatuh_tempo) + '. Mohon konfirmasi jika sudah membayar. Terima kasih.';
 
+=======
+  };
+
+  const undo = async (tagihan: Tagihan) => {
+    if (!window.confirm('Batalkan seluruh pembayaran ' + tagihan.penghuni_nama + ' untuk ' + namaBulan(tagihan.bulan) + '? Pembayaran ditandai batal; riwayatnya tetap tersimpan.')) return;
+    setBusy(true);
+    try { await api.tagihan.batal(tagihan.id); notify('Pembayaran dibatalkan. Tagihan kembali Belum Lunas.'); refresh(); }
+    catch (err) { notify((err as Error).message); }
+    finally { setBusy(false); }
+  };
+
+  const kirimTelegramTagihan = async (tagihan: Tagihan) => {
+    setBusy(true);
+    try {
+      await api.tagihan.kirimTelegram(tagihan.id);
+      notify('Pengingat tagihan dikirim ke Telegram ' + tagihan.penghuni_nama + '.');
+    } catch (err) {
+      notify((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+>>>>>>> Stashed changes
   const salinLinkBayar = async (tagihan: Tagihan) => {
     try {
       const link = await api.tagihan.linkBayar(tagihan.id);
@@ -126,10 +156,15 @@ export default function TagihanPage({ notify, onChanged }: Props) {
           <Button size="sm" variant="outline" disabled={busy} onClick={() => setEditingBill(tagihan)} aria-label={'Atur nominal dan jangka penyewaan untuk ' + tagihan.penghuni_nama}>
             <SlidersHorizontal /> Atur Nominal & Jangka Sewa
           </Button>
+<<<<<<< Updated upstream
           <Button size="sm" variant="outline" asChild>
             <a href={waLink(tagihan.penghuni_no_hp, pesanWa(tagihan))} target="_blank" rel="noopener noreferrer" aria-label={'Siapkan pengingat WhatsApp untuk ' + tagihan.penghuni_nama}>
               <MessageCircle /> <span className="md:sr-only">WhatsApp</span>
             </a>
+=======
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => kirimTelegramTagihan(tagihan)} aria-label={'Kirim pengingat Telegram untuk ' + tagihan.penghuni_nama}>
+            <Send /> <span className="md:sr-only">Telegram</span>
+>>>>>>> Stashed changes
           </Button>
           <Button size="sm" variant="outline" disabled={busy} onClick={() => salinLinkBayar(tagihan)} aria-label={'Salin link pembayaran online untuk ' + tagihan.penghuni_nama}>
             <Link2 /> <span className="md:sr-only">Link Bayar</span>
@@ -197,7 +232,11 @@ export default function TagihanPage({ notify, onChanged }: Props) {
           <BellRing className="size-4 text-amber-700" aria-hidden />
           <h2 className="font-semibold">Perlu diingatkan hari ini ({pengingat.length})</h2>
         </div>
+<<<<<<< Updated upstream
         <p className="text-sm text-muted-foreground">Tagihan jatuh tempo 3 hari lagi (H-3), hari ini (H-0), atau sudah terlambat. Kirim pengingat lewat WhatsApp.</p>
+=======
+        <p className="text-sm text-muted-foreground">Tagihan jatuh tempo 3 hari lagi (H-3), hari ini (H-0), atau sudah terlambat. Kirim pengingat langsung ke Telegram penghuni.</p>
+>>>>>>> Stashed changes
         <ul className="divide-y">
           {pengingat.map((t) => <li key={t.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
             <div className="min-w-0">
@@ -208,10 +247,15 @@ export default function TagihanPage({ notify, onChanged }: Props) {
               <Badge variant="outline" className={t.pengingat === 'Terlambat' ? 'border-red-200 bg-red-50 text-red-800' : 'border-amber-200 bg-amber-50 text-amber-900'}>
                 {t.pengingat === 'Terlambat' ? `Terlambat ${-t.hari} hari` : t.pengingat === 'H-0' ? 'Jatuh tempo hari ini' : 'H-3'}
               </Badge>
+<<<<<<< Updated upstream
               <Button size="sm" variant="outline" asChild>
                 <a href={waLink(t.penghuni_no_hp, pesanWa(t))} target="_blank" rel="noopener noreferrer" aria-label={'Kirim pengingat WhatsApp ke ' + t.penghuni_nama}>
                   <MessageCircle /> WhatsApp
                 </a>
+=======
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => kirimTelegramTagihan(t)} aria-label={'Kirim pengingat Telegram ke ' + t.penghuni_nama}>
+                <Send /> Kirim Telegram
+>>>>>>> Stashed changes
               </Button>
             </div>
           </li>)}
@@ -266,7 +310,11 @@ export default function TagihanPage({ notify, onChanged }: Props) {
       {payment && <PaymentModal tagihan={payment} onClose={() => { setPayment(null); refresh(); }} onSaved={() => { setPayment(null); notify('Pembayaran tersimpan. Rekap sudah diperbarui.'); refresh(); }} />}
       {creatingBill && <InputTagihanModal bulan={bulan} onClose={() => setCreatingBill(false)} onSaved={() => { setCreatingBill(false); notify('Tagihan dan jangka penyewaan tersimpan.'); refresh(); }} />}
       {editingBill && <EditTagihanModal tagihan={editingBill} onClose={() => setEditingBill(null)} onSaved={() => { setEditingBill(null); notify('Nominal dan jangka penyewaan tagihan diperbarui.'); refresh(); }} />}
+<<<<<<< Updated upstream
       {receipt && <ReceiptModal tagihan={receipt} admin={admin} onClose={() => setReceipt(null)} />}
+=======
+      {receipt && <ReceiptModal tagihan={receipt} admin={admin} notify={notify} onClose={() => setReceipt(null)} />}
+>>>>>>> Stashed changes
     </section>
   );
 }
@@ -527,23 +575,397 @@ function PaymentModal({ tagihan, onClose, onSaved }: { tagihan: Tagihan; onClose
     </form>
   </Modal>;
 }
+<<<<<<< Updated upstream
 function ReceiptModal({ tagihan, admin, onClose }: { tagihan: Tagihan; admin: AdminProfile | null; onClose: () => void }) {
   const [history, setHistory] = useState<Pembayaran[] | null>(null);
   const [error, setError] = useState('');
+=======
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const words = String(text || '').split(/\s+/).filter(Boolean);
+  if (!words.length) return [''];
+  const lines: string[] = [];
+  let cur = words[0]!;
+  for (let i = 1; i < words.length; i++) {
+    const next = `${cur} ${words[i]}`;
+    if (ctx.measureText(next).width <= maxWidth) cur = next;
+    else {
+      lines.push(cur);
+      cur = words[i]!;
+    }
+  }
+  lines.push(cur);
+  return lines;
+}
+
+function roundRectBox(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath();
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(x, y, w, h, r);
+  } else {
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+  }
+  ctx.closePath();
+}
+
+/** Render kartu kuitansi menjadi screenshot beresolusi tinggi di HTML5 Canvas. */
+function renderKuitansiCanvas(tagihan: Tagihan, admin: AdminProfile | null, history: Pembayaran[]): HTMLCanvasElement {
+  const W = 760;
+  const pad = 40;
+  const innerW = W - pad * 2;
+  const scale = 2;
+
+  const probe = document.createElement('canvas').getContext('2d')!;
+  const kosNama = admin?.nama_kos || 'Kos Gopi';
+  const kosAlamat = admin?.alamat_kos?.trim() || '';
+  const invCode = `INV-${tagihan.bulan.replace('-', '')}-${tagihan.id}`;
+  const statusTeks = tagihan.status_bayar;
+
+  probe.font = '400 16px Inter, system-ui, -apple-system, sans-serif';
+  const alamatLines = kosAlamat ? wrapText(probe, kosAlamat, innerW - 32) : [];
+  const penghuniLines = wrapText(probe, tagihan.penghuni_nama, innerW - 180);
+  const catatanBlocks = history.map((row) => ({
+    row,
+    noteLines: row.catatan ? wrapText(probe, row.catatan, innerW - 24) : [],
+  }));
+  const footerNote =
+    tagihan.status === 'Lunas'
+      ? 'Terima kasih atas pembayaran Anda.'
+      : 'Bukti pembayaran sebagian. Sisa tagihan belum lunas.';
+
+  let H = pad + 24;
+  H += 34; // nama kos
+  H += alamatLines.length * 22;
+  H += 24; // invoice code
+  H += 36; // badge + divider
+  H += 20; // gap after header
+  H += Math.max(1, penghuniLines.length) * 24 + 10;
+  H += 28 + 28 + 20; // kamar + periode + gap
+  H += 132 + 24; // summary box + gap
+  H += 30; // rincian title
+  for (const b of catatanBlocks) {
+    H += 24 + 22 + b.noteLines.length * 20 + 18;
+  }
+  H += 24 + 26 + 34 + pad + 24; // footer + bottom pad
+
+  const canvas = document.createElement('canvas');
+  canvas.width = W * scale;
+  canvas.height = H * scale;
+  const ctx = canvas.getContext('2d')!;
+  ctx.scale(scale, scale);
+
+  // Latar belakang putih polos & bingkai kartu kuitansi
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.strokeStyle = '#e4e4e7';
+  ctx.lineWidth = 2;
+  roundRectBox(ctx, 18, 18, W - 36, H - 36, 14);
+  ctx.stroke();
+
+  let y = pad + 18;
+
+  // Header
+  ctx.fillStyle = '#09090b';
+  ctx.font = '700 24px Inter, system-ui, -apple-system, sans-serif';
+  ctx.fillText(kosNama, pad, y);
+  y += 26;
+
+  if (alamatLines.length) {
+    ctx.fillStyle = '#52525b';
+    ctx.font = '400 15px Inter, system-ui, -apple-system, sans-serif';
+    for (const line of alamatLines) {
+      ctx.fillText(line, pad, y);
+      y += 22;
+    }
+  }
+
+  ctx.fillStyle = '#71717a';
+  ctx.font = '500 14px Inter, system-ui, -apple-system, sans-serif';
+  ctx.fillText(invCode, pad, y);
+  y += 16;
+
+  // Badge status
+  const badgeColor =
+    tagihan.status === 'Lunas'
+      ? { bg: '#ecfdf5', border: '#a7f3d0', text: '#065f46' }
+      : tagihan.status_bayar === 'Dicicil'
+        ? { bg: '#eff6ff', border: '#bfdbfe', text: '#1e40af' }
+        : { bg: '#fffbeb', border: '#fde68a', text: '#78350f' };
+  ctx.font = '600 13px Inter, system-ui, -apple-system, sans-serif';
+  const badgeW = ctx.measureText(statusTeks).width + 22;
+  ctx.fillStyle = badgeColor.bg;
+  ctx.strokeStyle = badgeColor.border;
+  ctx.lineWidth = 1.2;
+  roundRectBox(ctx, pad, y, badgeW, 26, 7);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = badgeColor.text;
+  ctx.fillText(statusTeks, pad + 11, y + 17);
+  y += 42;
+
+  ctx.strokeStyle = '#e4e4e7';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad, y);
+  ctx.lineTo(W - pad, y);
+  ctx.stroke();
+  y += 28;
+
+  // Identitas tagihan
+  const drawMeta = (label: string, valLines: string[]) => {
+    ctx.fillStyle = '#71717a';
+    ctx.font = '400 15px Inter, system-ui, -apple-system, sans-serif';
+    ctx.fillText(label, pad, y);
+    ctx.fillStyle = '#09090b';
+    ctx.font = '600 15px Inter, system-ui, -apple-system, sans-serif';
+    for (let i = 0; i < valLines.length; i++) {
+      ctx.fillText(valLines[i]!, pad + 150, y + i * 22);
+    }
+    y += Math.max(1, valLines.length) * 24 + 6;
+  };
+  drawMeta('Diterima dari', penghuniLines);
+  drawMeta('Kamar', [tagihan.kamar_nomor]);
+  drawMeta('Periode', [`${namaBulan(tagihan.bulan)} (${formatPeriodeSewa(tagihan.periode_sewa, tagihan.durasi_sewa)})`]);
+  y += 10;
+
+  // Kotak ringkasan nominal
+  ctx.fillStyle = '#f4f4f5';
+  roundRectBox(ctx, pad, y, innerW, 118, 10);
+  ctx.fill();
+
+  const drawMoneyRow = (label: string, val: string, rowY: number, bold = false) => {
+    ctx.fillStyle = '#18181b';
+    ctx.font = `${bold ? '600' : '400'} 15px Inter, system-ui, -apple-system, sans-serif`;
+    ctx.fillText(label, pad + 18, rowY);
+    ctx.font = '700 16px Inter, system-ui, -apple-system, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(val, W - pad - 18, rowY);
+    ctx.textAlign = 'left';
+  };
+
+  drawMoneyRow('Total tagihan', rupiah(tagihan.nominal), y + 28);
+  drawMoneyRow('Sudah diterima', rupiah(tagihan.terbayar), y + 58);
+  ctx.strokeStyle = '#d4d4d8';
+  ctx.beginPath();
+  ctx.moveTo(pad + 18, y + 74);
+  ctx.lineTo(W - pad - 18, y + 74);
+  ctx.stroke();
+  drawMoneyRow('Sisa tagihan', rupiah(tagihan.sisa), y + 98, true);
+  y += 142;
+
+  // Rincian transaksi
+  ctx.fillStyle = '#09090b';
+  ctx.font = '600 16px Inter, system-ui, -apple-system, sans-serif';
+  ctx.fillText('Rincian pembayaran', pad, y);
+  y += 28;
+
+  for (const { row, noteLines } of catatanBlocks) {
+    ctx.fillStyle = '#09090b';
+    ctx.font = '500 15px Inter, system-ui, -apple-system, sans-serif';
+    ctx.fillText(tanggal(row.tanggal_bayar), pad, y);
+    ctx.font = '700 15px Inter, system-ui, -apple-system, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(rupiah(row.jumlah), W - pad, y);
+    ctx.textAlign = 'left';
+    y += 20;
+
+    ctx.fillStyle = '#71717a';
+    ctx.font = '400 13px Inter, system-ui, -apple-system, sans-serif';
+    ctx.fillText(row.metode_pembayaran, pad, y);
+    y += 18;
+
+    if (noteLines.length) {
+      ctx.fillStyle = '#27272a';
+      ctx.font = '400 13px Inter, system-ui, -apple-system, sans-serif';
+      for (const l of noteLines) {
+        ctx.fillText(l, pad, y);
+        y += 18;
+      }
+    }
+
+    ctx.strokeStyle = '#e4e4e7';
+    ctx.beginPath();
+    ctx.moveTo(pad, y + 4);
+    ctx.lineTo(W - pad, y + 4);
+    ctx.stroke();
+    y += 22;
+  }
+
+  // Footer
+  y += 8;
+  ctx.fillStyle = '#71717a';
+  ctx.font = '400 14px Inter, system-ui, -apple-system, sans-serif';
+  ctx.fillText(footerNote, pad, y);
+  y += 30;
+  ctx.fillStyle = '#09090b';
+  ctx.font = '600 15px Inter, system-ui, -apple-system, sans-serif';
+  ctx.fillText(admin?.nama || 'Pengelola Kos', pad, y);
+
+  return canvas;
+}
+
+/** Bungkus gambar screenshot JPEG dari canvas langsung menjadi berkas PDF 1.4 valid. */
+function canvasToPdfBlob(canvas: HTMLCanvasElement): Blob {
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+  const b64 = dataUrl.split(',')[1] ?? '';
+  const bin = atob(b64);
+  const jpgBytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) jpgBytes[i] = bin.charCodeAt(i);
+
+  const imgW = canvas.width;
+  const imgH = canvas.height;
+  const pageW = 595;
+  const margin = 36;
+  const maxDrawW = pageW - margin * 2;
+  const maxDrawH = 770;
+  const scale = Math.min(maxDrawW / imgW, maxDrawH / imgH);
+  const drawW = imgW * scale;
+  const drawH = imgH * scale;
+  const pageH = Math.max(420, Math.ceil(drawH + margin * 2));
+  const x = (pageW - drawW) / 2;
+  const y = (pageH - drawH) / 2;
+
+  const encoder = new TextEncoder();
+  const chunks: Uint8Array[] = [];
+  let offset = 0;
+  const offsets: number[] = [0];
+
+  const pushBytes = (bytes: Uint8Array) => {
+    chunks.push(bytes);
+    offset += bytes.length;
+  };
+  const pushStr = (s: string) => pushBytes(encoder.encode(s));
+
+  pushStr('%PDF-1.4\n%\xFF\xFF\xFF\xFF\n');
+
+  offsets[1] = offset;
+  pushStr('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+
+  offsets[2] = offset;
+  pushStr('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n');
+
+  offsets[3] = offset;
+  pushStr(
+    `3 0 obj\n<< /Type /Page /Parent 2 0 R /Resources << /XObject << /Im0 4 0 R >> >> /MediaBox [0 0 ${pageW} ${pageH}] /Contents 5 0 R >>\nendobj\n`,
+  );
+
+  offsets[4] = offset;
+  pushStr(
+    `4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${imgW} /Height ${imgH} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpgBytes.length} >>\nstream\n`,
+  );
+  pushBytes(jpgBytes);
+  pushStr('\nendstream\nendobj\n');
+
+  const contentStream = `q\n${drawW.toFixed(2)} 0 0 ${drawH.toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)} cm\n/Im0 Do\nQ\n`;
+  offsets[5] = offset;
+  pushStr(`5 0 obj\n<< /Length ${contentStream.length} >>\nstream\n${contentStream}endstream\nendobj\n`);
+
+  const xrefOffset = offset;
+  pushStr('xref\n0 6\n0000000000 65535 f \n');
+  for (let i = 1; i <= 5; i++) {
+    pushStr(`${String(offsets[i]).padStart(10, '0')} 00000 n \n`);
+  }
+  pushStr(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`);
+
+  const pdfBytes = new Uint8Array(offset);
+  let pos = 0;
+  for (const c of chunks) {
+    pdfBytes.set(c, pos);
+    pos += c.length;
+  }
+  return new Blob([pdfBytes], { type: 'application/pdf' });
+}
+
+function triggerDownload(url: string, filename: string) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+function ReceiptModal({ tagihan, admin, notify, onClose }: { tagihan: Tagihan; admin: AdminProfile | null; notify: (msg: string) => void; onClose: () => void }) {
+  const [history, setHistory] = useState<Pembayaran[] | null>(null);
+  const [error, setError] = useState('');
+  const [sendingTg, setSendingTg] = useState(false);
+
+>>>>>>> Stashed changes
   useEffect(() => {
     let cancelled = false;
     api.tagihan.pembayaran(tagihan.id).then((rows) => { if (!cancelled) setHistory(rows); })
       .catch((err: Error) => { if (!cancelled) setError(err.message); });
     return () => { cancelled = true; };
   }, [tagihan.id]);
+<<<<<<< Updated upstream
   return <Modal title="Kuitansi Pembayaran" onClose={onClose}>
     <article className="receipt-print-area space-y-4 rounded-lg border p-4 text-sm">
       <header className="space-y-1 border-b pb-3"><p className="text-xl font-semibold">{admin?.nama_kos || 'Kos Gopi'}</p>{admin?.alamat_kos && <p className="text-muted-foreground">{admin.alamat_kos}</p>}<p className="text-xs text-muted-foreground">{'INV-' + tagihan.bulan.replace('-', '') + '-' + tagihan.id}</p><Status tagihan={tagihan} /></header>
+=======
+
+  const invCode = `INV-${tagihan.bulan.replace('-', '')}-${tagihan.id}`;
+
+  const unduhScreenshotPdf = () => {
+    if (!history) return;
+    const canvas = renderKuitansiCanvas(tagihan, admin, history);
+    const pdfBlob = canvasToPdfBlob(canvas);
+    const url = URL.createObjectURL(pdfBlob);
+    triggerDownload(url, `Kuitansi-${invCode}.pdf`);
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    notify(`Screenshot kuitansi ${invCode} diunduh sebagai PDF.`);
+  };
+
+  const unduhScreenshotPng = () => {
+    if (!history) return;
+    const canvas = renderKuitansiCanvas(tagihan, admin, history);
+    triggerDownload(canvas.toDataURL('image/png'), `Kuitansi-${invCode}.png`);
+    notify(`Screenshot kuitansi ${invCode} diunduh sebagai gambar PNG.`);
+  };
+
+  const kirimKeTelegram = async () => {
+    setSendingTg(true);
+    try {
+      await api.tagihan.kirimKuitansiTelegram(tagihan.id);
+      notify(`Kuitansi ${invCode} berhasil dikirim ke Telegram ${tagihan.penghuni_nama}.`);
+    } catch (err) {
+      notify((err as Error).message);
+    } finally {
+      setSendingTg(false);
+    }
+  };
+
+  return <Modal title="Kuitansi Pembayaran" onClose={onClose}>
+    <article className="space-y-4 rounded-lg border bg-background p-4 text-sm">
+      <header className="space-y-1 border-b pb-3"><p className="text-xl font-semibold">{admin?.nama_kos || 'Kos Gopi'}</p>{admin?.alamat_kos && <p className="text-muted-foreground">{admin.alamat_kos}</p>}<p className="text-xs text-muted-foreground">{invCode}</p><Status tagihan={tagihan} /></header>
+>>>>>>> Stashed changes
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2"><dt className="text-muted-foreground">Diterima dari</dt><dd className="break-words font-medium">{tagihan.penghuni_nama}</dd><dt className="text-muted-foreground">Kamar</dt><dd>{tagihan.kamar_nomor}</dd><dt className="text-muted-foreground">Periode</dt><dd>{namaBulan(tagihan.bulan)} ({formatPeriodeSewa(tagihan.periode_sewa, tagihan.durasi_sewa)})</dd></dl>
       <div className="space-y-2 rounded-md bg-muted/50 p-3 tabular-nums"><p className="flex justify-between gap-2"><span>Total tagihan</span><strong>{rupiah(tagihan.nominal)}</strong></p><p className="flex justify-between gap-2"><span>Sudah diterima</span><strong>{rupiah(tagihan.terbayar)}</strong></p><p className="flex justify-between gap-2 border-t pt-2"><span>Sisa tagihan</span><strong>{rupiah(tagihan.sisa)}</strong></p></div>
       {error ? <p role="alert" className="text-destructive">Riwayat tidak dapat dimuat: {error}</p> : !history ? <p role="status">Memuat riwayat pembayaran…</p> : <div className="space-y-2"><p className="font-medium">Rincian pembayaran</p>{history.map((row) => <div key={row.id} className="border-b pb-2"><p className="flex justify-between gap-2"><span>{tanggal(row.tanggal_bayar)}</span><strong className="tabular-nums">{rupiah(row.jumlah)}</strong></p><p className="text-xs text-muted-foreground">{row.metode_pembayaran}</p>{row.catatan && <p className="break-words text-xs">{row.catatan}</p>}</div>)}</div>}
       <footer className="border-t pt-3 text-xs text-muted-foreground"><p>{tagihan.status === 'Lunas' ? 'Terima kasih atas pembayaran Anda.' : 'Bukti pembayaran sebagian. Sisa tagihan belum lunas.'}</p><p className="mt-3 font-medium text-foreground">{admin?.nama || 'Pengelola Kos'}</p></footer>
     </article>
+<<<<<<< Updated upstream
     <div className="flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={onClose}>Tutup</Button><Button disabled={!history || !!error} onClick={() => window.print()}><Printer /> Cetak / Simpan PDF</Button></div>
+=======
+    <div className="flex flex-wrap justify-end gap-2">
+      <Button variant="outline" onClick={onClose}>Tutup</Button>
+      <Button variant="outline" disabled={!history || !!error || sendingTg} onClick={kirimKeTelegram}>
+        <Send /> {sendingTg ? 'Mengirim…' : 'Kirim ke Telegram'}
+      </Button>
+      <Button variant="outline" disabled={!history || !!error} onClick={unduhScreenshotPng}>
+        <Download /> Screenshot (PNG)
+      </Button>
+      <Button disabled={!history || !!error} onClick={unduhScreenshotPdf}>
+        <FileDown /> Screenshot ke PDF
+      </Button>
+    </div>
+>>>>>>> Stashed changes
   </Modal>;
 }

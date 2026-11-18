@@ -137,6 +137,7 @@ test('keluhan: status harus berurutan dan tanggal selesai tidak tertimpa saat ed
   assert.equal(buka.body.tanggal_selesai, null);
 });
 
+<<<<<<< Updated upstream
 test('keluhan tidak bisa dihapus, dan kamar dengan riwayat keluhan tidak bisa dihapus', async () => {
   const k = await kamarBaru();
   const kl = (await call('POST', '/keluhan', { kamar_id: k.id, judul: 'Pintu', deskripsi: 'Seret' })).body;
@@ -144,6 +145,33 @@ test('keluhan tidak bisa dihapus, dan kamar dengan riwayat keluhan tidak bisa di
   assert.equal((await call('DELETE', `/kamar/${k.id}`)).status, 409);
   assert.ok((await call('GET', `/keluhan/${kl.id}`)).body.id);
   assert.throws(() => db.prepare('DELETE FROM kamar WHERE id = ?').run(k.id), /KAMAR_PUNYA_KELUHAN/);
+=======
+test('keluhan aktif tidak bisa dihapus; keluhan Selesai masuk riwayat dan bisa dihapus', async () => {
+  const k = await kamarBaru();
+  const kl = (await call('POST', '/keluhan', { kamar_id: k.id, judul: 'Pintu', deskripsi: 'Seret' })).body;
+  // Masih Pending -> 409, kamar masih memiliki keluhan -> 409
+  assert.equal((await call('DELETE', `/keluhan/${kl.id}`)).status, 409);
+  assert.equal((await call('DELETE', `/kamar/${k.id}`)).status, 409);
+  assert.throws(() => db.prepare('DELETE FROM kamar WHERE id = ?').run(k.id), /KAMAR_PUNYA_KELUHAN/);
+
+  // Selesaikan keluhan -> masuk riwayat dan dapat dihapus
+  await call('PATCH', `/keluhan/${kl.id}/status`, { status: 'Diproses' });
+  await call('PATCH', `/keluhan/${kl.id}/status`, { status: 'Selesai' });
+  assert.equal((await call('DELETE', `/keluhan/${kl.id}`)).status, 204);
+  assert.equal((await call('GET', `/keluhan/${kl.id}`)).status, 404);
+
+  // Tes hapus semua riwayat selesai sekaligus
+  const kl2 = (await call('POST', '/keluhan', { kamar_id: k.id, judul: 'Lampu', deskripsi: 'Mati' })).body;
+  await call('PATCH', `/keluhan/${kl2.id}/status`, { status: 'Diproses' });
+  await call('PATCH', `/keluhan/${kl2.id}/status`, { status: 'Selesai' });
+  const kl3 = (await call('POST', '/keluhan', { kamar_id: k.id, judul: 'Kran', deskripsi: 'Macet' })).body;
+  const clearRes = await call('DELETE', '/keluhan/riwayat');
+  assert.equal(clearRes.status, 200);
+  assert.equal(clearRes.body.dihapus >= 1, true);
+  assert.equal((await call('GET', `/keluhan/${kl2.id}`)).status, 404);
+  // Keluhan yang masih Pending tetap tersimpan
+  assert.equal((await call('GET', `/keluhan/${kl3.id}`)).status, 200);
+>>>>>>> Stashed changes
 });
 
 test('filter tagihan "Belum Bayar" tidak mencampur yang sedang dicicil', async () => {

@@ -1,14 +1,27 @@
+<<<<<<< Updated upstream
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   AlertTriangle,
   Check,
   CheckCircle2,
   Clock,
+=======
+import { useCallback, useEffect, useState } from 'react';
+import type { FormEvent } from 'react';
+import {
+  AlertTriangle,
+  Bot,
+  Check,
+  CheckCircle2,
+  Clock,
+  Copy,
+>>>>>>> Stashed changes
   ExternalLink,
   Eye,
   Filter,
   Flame,
   Home,
+<<<<<<< Updated upstream
   MessageSquare,
   MessageSquareWarning,
   Pencil,
@@ -22,6 +35,18 @@ import {
 } from 'lucide-react';
 import { api, ApiError, tanggal, today, waLink } from '../api';
 import type { Kamar, Keluhan, PrioritasKeluhan, RekapKeluhan, StatusKeluhan } from '../api';
+=======
+  Pencil,
+  RefreshCw,
+  Search,
+  Send,
+  Trash2,
+  User,
+  Wrench,
+} from 'lucide-react';
+import { api, ApiError, tanggal, today } from '../api';
+import type { Keluhan, PrioritasKeluhan, RekapKeluhan, StatusKeluhan } from '../api';
+>>>>>>> Stashed changes
 import { Field, Modal, selectClass } from '../components';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -36,6 +61,7 @@ interface KeluhanPageProps {
   onChanged?: () => void;
 }
 
+<<<<<<< Updated upstream
 const KATEGORI_LIST = [
   'Elektronik & AC',
   'Plumbing & Sanitasi',
@@ -47,6 +73,8 @@ const KATEGORI_LIST = [
   'Lainnya',
 ];
 
+=======
+>>>>>>> Stashed changes
 // Sama dengan aturan server (409 jika di luar ini): Pending -> Diproses -> Selesai, Selesai bisa dibuka kembali.
 const STATUS_BERIKUT: Record<StatusKeluhan, StatusKeluhan[]> = {
   Pending: ['Diproses'],
@@ -63,6 +91,7 @@ const LABEL_STATUS: Record<StatusKeluhan, string> = {
 const textareaClass =
   'flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:border-destructive';
 
+<<<<<<< Updated upstream
 const TEMPLAT_KELUHAN = [
   {
     judul: 'AC bocor dan tidak dingin',
@@ -96,12 +125,15 @@ const TEMPLAT_KELUHAN = [
   },
 ];
 
+=======
+>>>>>>> Stashed changes
 const errorsDari = (err: unknown) =>
   err instanceof ApiError && Object.keys(err.errors).length ? err.errors : { _: (err as Error).message };
 
 export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
   const [keluhanList, setKeluhanList] = useState<Keluhan[]>([]);
   const [rekap, setRekap] = useState<RekapKeluhan | null>(null);
+<<<<<<< Updated upstream
   const [kamarList, setKamarList] = useState<Kamar[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -122,6 +154,16 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
   const [formFotoUrl, setFormFotoUrl] = useState('');
   const [submittingForm, setSubmittingForm] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+=======
+  const [loading, setLoading] = useState(true);
+
+  // Tab & Filter state: keluhan Selesai otomatis pindah ke tab Riwayat Selesai.
+  const [tabTampilan, setTabTampilan] = useState<'aktif' | 'riwayat' | 'semua'>('aktif');
+  const [filterStatus, setFilterStatus] = useState<string>('semua');
+  const [filterPrioritas, setFilterPrioritas] = useState<string>('semua');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [clearingRiwayat, setClearingRiwayat] = useState(false);
+>>>>>>> Stashed changes
 
   // Modal Update Status sisi pemilik (WBS 3.2)
   const [modalKeluhan, setModalKeluhan] = useState<Keluhan | null>(null);
@@ -137,6 +179,7 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
   // Modal Detail Keluhan
   const [detailKeluhan, setDetailKeluhan] = useState<Keluhan | null>(null);
 
+<<<<<<< Updated upstream
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -152,10 +195,26 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
       notify(err instanceof Error ? err.message : 'Gagal memuat data keluhan.');
     } finally {
       setLoading(false);
+=======
+  const loadData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const [list, rkp] = await Promise.all([
+        api.keluhan.list(),
+        api.keluhan.rekap().catch(() => null),
+      ]);
+      setKeluhanList(list);
+      setRekap(rkp);
+    } catch (err) {
+      if (!silent) notify(err instanceof Error ? err.message : 'Gagal memuat data keluhan.');
+    } finally {
+      if (!silent) setLoading(false);
+>>>>>>> Stashed changes
     }
   }, [notify]);
 
   useEffect(() => {
+<<<<<<< Updated upstream
     loadData();
   }, [loadData]);
 
@@ -216,12 +275,54 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
     setFormPrioritas(t.prioritas);
   };
 
+=======
+    void loadData();
+  }, [loadData]);
+
+  // Keluhan baru dari Bot Telegram penghuni langsung muncul di panel pemilik tanpa muat ulang manual.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void loadData(true);
+      }
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, [loadData]);
+
+  const salinFormatTelegram = async () => {
+    const templat = [
+      'Format Lapor Keluhan via Bot Telegram Kos Gopi:',
+      '/keluhan Judul | Deskripsi',
+      '',
+      'Atau format lengkap:',
+      '/keluhan Kategori | Judul | Deskripsi | Prioritas',
+      '',
+      'Contoh:',
+      '/keluhan Elektronik & AC | AC kamar bocor | Air menetes deras dari unit indoor | Tinggi',
+    ].join('\n');
+    try {
+      await navigator.clipboard.writeText(templat);
+      notify('Format /keluhan Bot Telegram berhasil disalin.');
+    } catch {
+      notify('Gagal menyalin otomatis. Salin format yang tampil di kartu Telegram.');
+    }
+  };
+
+>>>>>>> Stashed changes
   // Handle Cepat Ubah Status (1-klik WBS 3.2). Tanpa catatan/tanggal: server menyimpan catatan lama dan mengisi tanggal selesai.
   const handleQuickStatusChange = async (keluhan: Keluhan, statusBaru: StatusKeluhan) => {
     setBusyId(keluhan.id);
     try {
       await api.keluhan.updateStatus(keluhan.id, { status: statusBaru });
+<<<<<<< Updated upstream
       notify(`Status keluhan diperbarui menjadi ${statusBaru}.`);
+=======
+      notify(
+        statusBaru === 'Selesai'
+          ? 'Keluhan ditandai Selesai dan dipindahkan ke tab Riwayat Selesai.'
+          : `Status keluhan diperbarui menjadi ${statusBaru}.`,
+      );
+>>>>>>> Stashed changes
       await loadData();
       onChanged?.();
     } catch (err) {
@@ -231,6 +332,41 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
     }
   };
 
+<<<<<<< Updated upstream
+=======
+  const handleHapusRiwayat = async (keluhan: Keluhan) => {
+    if (!window.confirm(`Hapus riwayat keluhan "${keluhan.judul}" (${keluhan.kamar_nomor}) secara permanen?`)) return;
+    setBusyId(keluhan.id);
+    try {
+      await api.keluhan.remove(keluhan.id);
+      notify(`Riwayat keluhan "${keluhan.judul}" berhasil dihapus.`);
+      await loadData();
+      onChanged?.();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Gagal menghapus riwayat keluhan.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleHapusSemuaRiwayat = async () => {
+    const jumlahSelesai = rekap?.selesai ?? keluhanList.filter((k) => k.status === 'Selesai').length;
+    if (!jumlahSelesai) return;
+    if (!window.confirm(`Hapus seluruh ${jumlahSelesai} riwayat keluhan yang sudah selesai secara permanen?`)) return;
+    setClearingRiwayat(true);
+    try {
+      const res = await api.keluhan.clearRiwayat();
+      notify(`${res.dihapus} riwayat keluhan selesai berhasil dihapus.`);
+      await loadData();
+      onChanged?.();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Gagal menghapus semua riwayat keluhan.');
+    } finally {
+      setClearingRiwayat(false);
+    }
+  };
+
+>>>>>>> Stashed changes
   const bukaModalStatus = (k: Keluhan) => {
     setModalKeluhan(k);
     setModalStatus(k.status);
@@ -240,7 +376,11 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
   };
 
   // Handle Update Status lewat Modal (dengan input catatan teknisi/pemilik)
+<<<<<<< Updated upstream
   const handleSaveModalStatus = async (e: React.FormEvent) => {
+=======
+  const handleSaveModalStatus = async (e: FormEvent) => {
+>>>>>>> Stashed changes
     e.preventDefault();
     if (!modalKeluhan) return;
     setUpdatingStatus(true);
@@ -256,7 +396,15 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
             : undefined,
       });
 
+<<<<<<< Updated upstream
       notify(`Keluhan "${modalKeluhan.judul}" berhasil diperbarui (${modalStatus}).`);
+=======
+      notify(
+        modalStatus === 'Selesai'
+          ? `Keluhan "${modalKeluhan.judul}" selesai & dipindahkan ke Riwayat Selesai.`
+          : `Keluhan "${modalKeluhan.judul}" berhasil diperbarui (${modalStatus}).`,
+      );
+>>>>>>> Stashed changes
       setModalKeluhan(null);
       await loadData();
       onChanged?.();
@@ -267,8 +415,24 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
     }
   };
 
+<<<<<<< Updated upstream
   // Filter list
   const filteredList = keluhanList.filter((k) => {
+=======
+  const aktifCount = rekap?.aktif ?? keluhanList.filter((k) => k.status !== 'Selesai').length;
+  const selesaiCount = rekap?.selesai ?? keluhanList.filter((k) => k.status === 'Selesai').length;
+  const totalCount = rekap?.total ?? keluhanList.length;
+
+  const gantiTab = (next: 'aktif' | 'riwayat' | 'semua') => {
+    setTabTampilan(next);
+    setFilterStatus('semua');
+  };
+
+  // Filter list
+  const filteredList = keluhanList.filter((k) => {
+    if (tabTampilan === 'aktif' && k.status === 'Selesai') return false;
+    if (tabTampilan === 'riwayat' && k.status !== 'Selesai') return false;
+>>>>>>> Stashed changes
     if (filterStatus !== 'semua' && k.status !== filterStatus) return false;
     if (filterPrioritas !== 'semua' && k.prioritas !== filterPrioritas) return false;
     if (searchQuery.trim()) {
@@ -333,6 +497,7 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
     }
   };
 
+<<<<<<< Updated upstream
   // Link WhatsApp untuk konfirmasi penanganan ke penghuni
   const linkWhatsApp = (keluhan: Keluhan) =>
     waLink(
@@ -388,6 +553,28 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
             Sisi Pemilik
           </Button>
         </div>
+=======
+  const handleKirimTelegram = async (keluhan: Keluhan) => {
+    setBusyId(keluhan.id);
+    try {
+      await api.keluhan.kirimTelegram(keluhan.id);
+      notify(`Update keluhan #${keluhan.id} dikirim ke Telegram ${keluhan.penghuni_nama}.`);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Gagal mengirim pesan Telegram.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header Panel Keluhan Pemilik Kos (WBS 3.2) */}
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight">Keluhan Fasilitas</h2>
+        <p className="text-sm text-muted-foreground">
+          Pemantauan dan penanganan laporan kerusakan fasilitas kamar yang masuk dari Bot Telegram penghuni.
+        </p>
+>>>>>>> Stashed changes
       </div>
 
       {/* Ringkasan Status Keluhan */}
@@ -437,6 +624,7 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
         </Card>
       </div>
 
+<<<<<<< Updated upstream
       {/* TAMPILAN SISI PENGHUNI (WBS 3.1) - FORM INPUT KELUHAN */}
       {(viewMode === 'penghuni' || viewMode === 'semua') && (
         <Card className="border-primary/20 shadow-sm">
@@ -613,11 +801,108 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
               <Button variant="outline" size="sm" onClick={loadData} disabled={loading} className="gap-1.5">
                 <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
                 Muat Ulang
+=======
+      {/* Informasi Integrasi Bot Telegram (Penghuni Lapor -> Dashboard, Status Berubah -> Telegram Penghuni) */}
+      <Card className="border-blue-500/20 bg-blue-500/5">
+        <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1.5 text-sm">
+            <div className="flex items-center gap-2 font-semibold text-foreground">
+              <Bot className="size-4 text-blue-600 dark:text-blue-400" />
+              Integrasi Keluhan 2 Arah via Bot Telegram
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Penghuni yang sudah terhubung (<code className="rounded bg-muted px-1 py-0.5">/hubung</code>) dapat mengirim
+              keluhan langsung dari Telegram tanpa membuka dashboard pemilik. Saat Anda memperbarui status di bawah,
+              notifikasi otomatis dikirim ke Telegram penghuni.
+            </p>
+            <div className="flex flex-wrap gap-2 pt-1 text-xs">
+              <code className="rounded border bg-background px-2 py-1 font-mono text-foreground">
+                /keluhan Judul | Deskripsi
+              </code>
+              <code className="rounded border bg-background px-2 py-1 font-mono text-foreground">
+                /keluhan Kategori | Judul | Deskripsi | Prioritas
+              </code>
+              <code className="rounded border bg-background px-2 py-1 font-mono text-muted-foreground">
+                /statuskeluhan
+              </code>
+            </div>
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={salinFormatTelegram} className="shrink-0 gap-1.5">
+            <Copy className="size-3.5" />
+            Salin Format /keluhan
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* DAFTAR & PENANGANAN KELUHAN (WBS 3.2 - KHUSUS ADMIN / PEMILIK) */}
+      <Card className="shadow-sm">
+          <CardHeader className="pb-4">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle className="text-lg">Daftar &amp; Penanganan Keluhan</CardTitle>
+                <CardDescription>
+                  Keluhan berstatus Pending/Diproses tampil di Keluhan Aktif; saat ditandai Selesai otomatis pindah ke
+                  Riwayat Selesai dan dapat dihapus.
+                </CardDescription>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {tabTampilan === 'riwayat' && selesaiCount > 0 && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleHapusSemuaRiwayat}
+                    disabled={clearingRiwayat || loading}
+                    className="gap-1.5"
+                  >
+                    <Trash2 className="size-3.5" />
+                    {clearingRiwayat ? 'Menghapus...' : `Hapus Semua Riwayat (${selesaiCount})`}
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" onClick={() => void loadData(false)} disabled={loading} className="gap-1.5">
+                  <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
+                  Muat Ulang
+                </Button>
+              </div>
+            </div>
+
+            {/* Tab Keluhan Aktif vs Riwayat Selesai */}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={tabTampilan === 'aktif' ? 'default' : 'outline'}
+                onClick={() => gantiTab('aktif')}
+                className="h-8 text-xs"
+              >
+                Keluhan Aktif ({aktifCount})
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={tabTampilan === 'riwayat' ? 'default' : 'outline'}
+                onClick={() => gantiTab('riwayat')}
+                className="h-8 text-xs"
+              >
+                Riwayat Selesai ({selesaiCount})
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={tabTampilan === 'semua' ? 'default' : 'outline'}
+                onClick={() => gantiTab('semua')}
+                className="h-8 text-xs"
+              >
+                Semua ({totalCount})
+>>>>>>> Stashed changes
               </Button>
             </div>
 
             {/* Filter Bar */}
+<<<<<<< Updated upstream
             <div className="mt-4 flex flex-col gap-3 rounded-lg border bg-muted/20 p-3 sm:flex-row sm:items-center">
+=======
+            <div className="mt-3 flex flex-col gap-3 rounded-lg border bg-muted/20 p-3 sm:flex-row sm:items-center">
+>>>>>>> Stashed changes
               <div className="relative flex-1">
                 <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -630,6 +915,7 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+<<<<<<< Updated upstream
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Filter className="size-3.5" />
                   Status:
@@ -645,6 +931,27 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
                   <option value="Diproses">Diproses</option>
                   <option value="Selesai">Selesai</option>
                 </select>
+=======
+                {tabTampilan !== 'riwayat' && (
+                  <>
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Filter className="size-3.5" />
+                      Status:
+                    </div>
+                    <select
+                      aria-label="Filter status"
+                      value={filterStatus}
+                      onChange={(e) => setFilterStatus(e.target.value)}
+                      className={cn(selectClass, 'h-9 w-36 text-xs')}
+                    >
+                      <option value="semua">{tabTampilan === 'aktif' ? 'Semua Aktif' : 'Semua Status'}</option>
+                      <option value="Pending">Pending</option>
+                      <option value="Diproses">Diproses</option>
+                      {tabTampilan === 'semua' && <option value="Selesai">Selesai</option>}
+                    </select>
+                  </>
+                )}
+>>>>>>> Stashed changes
 
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">Prioritas:</div>
                 <select
@@ -668,9 +975,21 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
             ) : filteredList.length === 0 ? (
               <div className="py-12 text-center">
                 <CheckCircle2 className="mx-auto mb-2 size-8 text-emerald-500" />
+<<<<<<< Updated upstream
                 <p className="font-medium text-foreground">Tidak ada keluhan fasilitas yang cocok.</p>
                 <p className="text-xs text-muted-foreground">
                   Semua keluhan telah diselesaikan atau tidak ada data pada filter ini.
+=======
+                <p className="font-medium text-foreground">
+                  {tabTampilan === 'riwayat'
+                    ? 'Belum ada riwayat keluhan selesai.'
+                    : 'Tidak ada keluhan aktif saat ini.'}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {tabTampilan === 'riwayat'
+                    ? 'Keluhan yang Anda tandai Selesai akan muncul di tab ini dan bisa dihapus.'
+                    : 'Semua keluhan sudah selesai (lihat di tab Riwayat Selesai) atau tidak ada data pada filter ini.'}
+>>>>>>> Stashed changes
                 </p>
               </div>
             ) : (
@@ -839,6 +1158,7 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
                           Ubah Status & Catatan
                         </Button>
 
+<<<<<<< Updated upstream
                         {/* WhatsApp Notifikasi Penghuni (kamar kosong tidak punya nomor) */}
                         {k.penghuni_no_hp && (
                           <Button
@@ -851,6 +1171,33 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
                               <MessageSquare className="size-3.5" />
                               WA Penghuni
                             </a>
+=======
+                        {/* Kirim Update Keluhan ke Telegram Penghuni */}
+                        {k.penghuni_id && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 gap-1.5 text-xs text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-950/30"
+                            disabled={busyId === k.id}
+                            onClick={() => handleKirimTelegram(k)}
+                          >
+                            <Send className="size-3.5" />
+                            Kirim Update ke Telegram
+                          </Button>
+                        )}
+
+                        {/* Hapus Riwayat (hanya tampil setelah status Selesai) */}
+                        {k.status === 'Selesai' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 gap-1.5 border-destructive/30 text-xs text-destructive hover:bg-destructive/10"
+                            disabled={busyId === k.id}
+                            onClick={() => handleHapusRiwayat(k)}
+                          >
+                            <Trash2 className="size-3.5" />
+                            Hapus Riwayat
+>>>>>>> Stashed changes
                           </Button>
                         )}
                       </div>
@@ -871,7 +1218,10 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
             )}
           </CardContent>
         </Card>
+<<<<<<< Updated upstream
       )}
+=======
+>>>>>>> Stashed changes
 
       {/* MODAL UPDATE STATUS KELUHAN (WBS 3.2) */}
       {modalKeluhan && (
@@ -922,7 +1272,11 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
             <Field
               label="Catatan penanganan & tindak lanjut"
               error={modalErrors.catatan_penanganan}
+<<<<<<< Updated upstream
               hint="Catatan tersimpan di riwayat dan dapat diteruskan ke penghuni lewat WhatsApp."
+=======
+              hint="Catatan tersimpan di riwayat dan dikirim otomatis ke Telegram penghuni."
+>>>>>>> Stashed changes
             >
               <textarea
                 placeholder="Contoh: Teknisi dijadwalkan datang jam 14.00 WIB untuk mengganti seal kran."

@@ -719,3 +719,88 @@ test('TC-Sewa-05: Input manual nominal tagihan dan jangka penyewaan lewat POST /
   assert.equal(pm.durasi_sewa, 5);
   assert.equal(pm.tanggal_selesai_sewa, '2026-11-25');
 });
+<<<<<<< Updated upstream
+=======
+
+test('TC-Penghuni-01: Edit profil penghuni aktif & pindah kamar kosong (PUT /api/penghuni/:id)', async () => {
+  const k1 = await call('POST', '/kamar', { nomor: 'P-01', tipe: 'Bulanan', harga: 1000000 });
+  const k2 = await call('POST', '/kamar', { nomor: 'P-02', tipe: 'Bulanan', harga: 1100000 });
+  const k3 = await call('POST', '/kamar', { nomor: 'P-03', tipe: 'Bulanan', harga: 1200000 });
+
+  const p1 = await call('POST', '/penghuni', {
+    nama: 'Sinta Awal',
+    no_hp: '081900020001',
+    kamar_id: k1.body.id,
+    tanggal_masuk: tanggalJakarta(),
+    periode_sewa: 'Bulanan',
+    durasi_sewa: 1,
+    harga_sewa: 1000000,
+  });
+  await call('POST', '/penghuni', {
+    nama: 'Penghuni Lain P03',
+    no_hp: '081900020002',
+    kamar_id: k3.body.id,
+    tanggal_masuk: tanggalJakarta(),
+    harga_sewa: 1200000,
+  });
+
+  // Gagal pindah ke kamar yang sudah terisi
+  const gagal = await call('PUT', `/penghuni/${p1.body.id}`, {
+    nama: 'Sinta Baru',
+    no_hp: '081900020001',
+    kamar_id: k3.body.id,
+    tanggal_masuk: tanggalJakarta(),
+    periode_sewa: 'Bulanan',
+    durasi_sewa: 1,
+    harga_sewa: 1000000,
+  });
+  assert.equal(gagal.status, 409);
+
+  // Berhasil update profil lengkap + pindah ke kamar kosong P-02
+  const updated = await call('PUT', `/penghuni/${p1.body.id}`, {
+    nama: 'Sinta Wijaya',
+    no_hp: '081900020099',
+    kamar_id: k2.body.id,
+    tanggal_masuk: tanggalJakarta(),
+    periode_sewa: 'Mingguan',
+    durasi_sewa: 2,
+    harga_sewa: 750000,
+  });
+  assert.equal(updated.status, 200);
+  assert.equal(updated.body.nama, 'Sinta Wijaya');
+  assert.equal(updated.body.no_hp, '081900020099');
+  assert.equal(updated.body.kamar_nomor, 'P-02');
+  assert.equal(updated.body.periode_sewa, 'Mingguan');
+  assert.equal(updated.body.durasi_sewa, 2);
+  assert.equal(updated.body.harga_sewa, 750000);
+
+  // Kamar lama kembali Kosong, kamar baru menjadi Terisi
+  assert.equal((await call('GET', `/kamar/${k1.body.id}`)).body.status, 'Kosong');
+  assert.equal((await call('GET', `/kamar/${k2.body.id}`)).body.status, 'Terisi');
+
+  // Tagihan aktif ikut pindah kamar & menyesuaikan nominal/periode
+  const bulanIni = tanggalJakarta().slice(0, 7);
+  const tagihanList = (await call('GET', `/tagihan?bulan=${bulanIni}`)).body as {
+    penghuni_id: number; kamar_nomor: string; nominal: number; periode_sewa: string; durasi_sewa: number;
+  }[];
+  const t = tagihanList.find((x) => x.penghuni_id === p1.body.id)!;
+  assert.equal(t.kamar_nomor, 'P-02');
+  assert.equal(t.nominal, 750000);
+  assert.equal(t.periode_sewa, 'Mingguan');
+  assert.equal(t.durasi_sewa, 2);
+});
+
+test('TC-Penghuni-02: GET /api/penghuni diurutkan berdasarkan nomor kamar', async () => {
+  const u10 = await call('POST', '/kamar', { nomor: 'U10', tipe: 'Bulanan', harga: 1000000 });
+  const u2 = await call('POST', '/kamar', { nomor: 'U2', tipe: 'Bulanan', harga: 1000000 });
+  const u1 = await call('POST', '/kamar', { nomor: 'U1', tipe: 'Bulanan', harga: 1000000 });
+
+  await call('POST', '/penghuni', { nama: 'Zaza', no_hp: '081900030010', kamar_id: u10.body.id, tanggal_masuk: tanggalJakarta(), harga_sewa: 1000000 });
+  await call('POST', '/penghuni', { nama: 'Budi', no_hp: '081900030002', kamar_id: u2.body.id, tanggal_masuk: tanggalJakarta(), harga_sewa: 1000000 });
+  await call('POST', '/penghuni', { nama: 'Andi', no_hp: '081900030001', kamar_id: u1.body.id, tanggal_masuk: tanggalJakarta(), harga_sewa: 1000000 });
+
+  const list = (await call('GET', '/penghuni')).body as { kamar_nomor: string }[];
+  const urutU = list.filter((p) => p.kamar_nomor.startsWith('U')).map((p) => p.kamar_nomor);
+  assert.deepEqual(urutU, ['U1', 'U2', 'U10']);
+});
+>>>>>>> Stashed changes
