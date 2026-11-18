@@ -1,12 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-<<<<<<< Updated upstream
-import { BellRing, Check, CircleAlert, CreditCard, Link2, LoaderCircle, MessageCircle, Plus, Printer, Receipt, RefreshCw, Search, SlidersHorizontal, Trash2, Undo2 } from 'lucide-react';
-import { api, ApiError, formatPeriodeSewa, namaBulan, PERIODE_SEWA_LIST, rupiah, satuanPeriode, tanggal, today, waLink } from '../api';
-=======
 import { BellRing, Check, CircleAlert, CreditCard, Download, FileDown, Link2, LoaderCircle, Plus, Receipt, RefreshCw, Search, Send, SlidersHorizontal, Trash2, Undo2 } from 'lucide-react';
 import { api, ApiError, formatPeriodeSewa, namaBulan, PERIODE_SEWA_LIST, rupiah, satuanPeriode, tanggal, today } from '../api';
->>>>>>> Stashed changes
 import type { AdminProfile, Pembayaran, PengingatTagihan, Penghuni, PeriodeSewa, RekapTagihan, Tagihan } from '../api';
 import { Field, Modal, selectClass } from '../components';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -100,21 +95,6 @@ export default function TagihanPage({ notify, onChanged }: Props) {
       refresh();
     } catch (err) { notify((err as Error).message); }
     finally { setBusy(false); }
-<<<<<<< Updated upstream
-  };
-
-  const undo = async (tagihan: Tagihan) => {
-    if (!window.confirm('Batalkan seluruh pembayaran ' + tagihan.penghuni_nama + ' untuk ' + namaBulan(tagihan.bulan) + '? Pembayaran ditandai batal; riwayatnya tetap tersimpan.')) return;
-    setBusy(true);
-    try { await api.tagihan.batal(tagihan.id); notify('Pembayaran dibatalkan. Tagihan kembali Belum Lunas.'); refresh(); }
-    catch (err) { notify((err as Error).message); }
-    finally { setBusy(false); }
-  };
-
-  const pesanWa = (tagihan: Tagihan) =>
-    'Halo ' + tagihan.penghuni_nama + ', pengingat sewa ' + (admin?.nama_kos || 'Kos Gopi') + ' kamar ' + tagihan.kamar_nomor + ' periode ' + namaBulan(tagihan.bulan) + '. Sisa tagihan ' + rupiah(tagihan.sisa) + ', jatuh tempo ' + tanggal(tagihan.jatuh_tempo) + '. Mohon konfirmasi jika sudah membayar. Terima kasih.';
-
-=======
   };
 
   const undo = async (tagihan: Tagihan) => {
@@ -137,7 +117,6 @@ export default function TagihanPage({ notify, onChanged }: Props) {
     }
   };
 
->>>>>>> Stashed changes
   const salinLinkBayar = async (tagihan: Tagihan) => {
     try {
       const link = await api.tagihan.linkBayar(tagihan.id);
@@ -156,15 +135,8 @@ export default function TagihanPage({ notify, onChanged }: Props) {
           <Button size="sm" variant="outline" disabled={busy} onClick={() => setEditingBill(tagihan)} aria-label={'Atur nominal dan jangka penyewaan untuk ' + tagihan.penghuni_nama}>
             <SlidersHorizontal /> Atur Nominal & Jangka Sewa
           </Button>
-<<<<<<< Updated upstream
-          <Button size="sm" variant="outline" asChild>
-            <a href={waLink(tagihan.penghuni_no_hp, pesanWa(tagihan))} target="_blank" rel="noopener noreferrer" aria-label={'Siapkan pengingat WhatsApp untuk ' + tagihan.penghuni_nama}>
-              <MessageCircle /> <span className="md:sr-only">WhatsApp</span>
-            </a>
-=======
           <Button size="sm" variant="outline" disabled={busy} onClick={() => kirimTelegramTagihan(tagihan)} aria-label={'Kirim pengingat Telegram untuk ' + tagihan.penghuni_nama}>
             <Send /> <span className="md:sr-only">Telegram</span>
->>>>>>> Stashed changes
           </Button>
           <Button size="sm" variant="outline" disabled={busy} onClick={() => salinLinkBayar(tagihan)} aria-label={'Salin link pembayaran online untuk ' + tagihan.penghuni_nama}>
             <Link2 /> <span className="md:sr-only">Link Bayar</span>
@@ -232,11 +204,7 @@ export default function TagihanPage({ notify, onChanged }: Props) {
           <BellRing className="size-4 text-amber-700" aria-hidden />
           <h2 className="font-semibold">Perlu diingatkan hari ini ({pengingat.length})</h2>
         </div>
-<<<<<<< Updated upstream
-        <p className="text-sm text-muted-foreground">Tagihan jatuh tempo 3 hari lagi (H-3), hari ini (H-0), atau sudah terlambat. Kirim pengingat lewat WhatsApp.</p>
-=======
         <p className="text-sm text-muted-foreground">Tagihan jatuh tempo 3 hari lagi (H-3), hari ini (H-0), atau sudah terlambat. Kirim pengingat langsung ke Telegram penghuni.</p>
->>>>>>> Stashed changes
         <ul className="divide-y">
           {pengingat.map((t) => <li key={t.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
             <div className="min-w-0">
@@ -247,15 +215,8 @@ export default function TagihanPage({ notify, onChanged }: Props) {
               <Badge variant="outline" className={t.pengingat === 'Terlambat' ? 'border-red-200 bg-red-50 text-red-800' : 'border-amber-200 bg-amber-50 text-amber-900'}>
                 {t.pengingat === 'Terlambat' ? `Terlambat ${-t.hari} hari` : t.pengingat === 'H-0' ? 'Jatuh tempo hari ini' : 'H-3'}
               </Badge>
-<<<<<<< Updated upstream
-              <Button size="sm" variant="outline" asChild>
-                <a href={waLink(t.penghuni_no_hp, pesanWa(t))} target="_blank" rel="noopener noreferrer" aria-label={'Kirim pengingat WhatsApp ke ' + t.penghuni_nama}>
-                  <MessageCircle /> WhatsApp
-                </a>
-=======
               <Button size="sm" variant="outline" disabled={busy} onClick={() => kirimTelegramTagihan(t)} aria-label={'Kirim pengingat Telegram ke ' + t.penghuni_nama}>
                 <Send /> Kirim Telegram
->>>>>>> Stashed changes
               </Button>
             </div>
           </li>)}
@@ -310,11 +271,7 @@ export default function TagihanPage({ notify, onChanged }: Props) {
       {payment && <PaymentModal tagihan={payment} onClose={() => { setPayment(null); refresh(); }} onSaved={() => { setPayment(null); notify('Pembayaran tersimpan. Rekap sudah diperbarui.'); refresh(); }} />}
       {creatingBill && <InputTagihanModal bulan={bulan} onClose={() => setCreatingBill(false)} onSaved={() => { setCreatingBill(false); notify('Tagihan dan jangka penyewaan tersimpan.'); refresh(); }} />}
       {editingBill && <EditTagihanModal tagihan={editingBill} onClose={() => setEditingBill(null)} onSaved={() => { setEditingBill(null); notify('Nominal dan jangka penyewaan tagihan diperbarui.'); refresh(); }} />}
-<<<<<<< Updated upstream
-      {receipt && <ReceiptModal tagihan={receipt} admin={admin} onClose={() => setReceipt(null)} />}
-=======
       {receipt && <ReceiptModal tagihan={receipt} admin={admin} notify={notify} onClose={() => setReceipt(null)} />}
->>>>>>> Stashed changes
     </section>
   );
 }
@@ -575,11 +532,6 @@ function PaymentModal({ tagihan, onClose, onSaved }: { tagihan: Tagihan; onClose
     </form>
   </Modal>;
 }
-<<<<<<< Updated upstream
-function ReceiptModal({ tagihan, admin, onClose }: { tagihan: Tagihan; admin: AdminProfile | null; onClose: () => void }) {
-  const [history, setHistory] = useState<Pembayaran[] | null>(null);
-  const [error, setError] = useState('');
-=======
 function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
   const words = String(text || '').split(/\s+/).filter(Boolean);
   if (!words.length) return [''];
@@ -898,18 +850,12 @@ function ReceiptModal({ tagihan, admin, notify, onClose }: { tagihan: Tagihan; a
   const [error, setError] = useState('');
   const [sendingTg, setSendingTg] = useState(false);
 
->>>>>>> Stashed changes
   useEffect(() => {
     let cancelled = false;
     api.tagihan.pembayaran(tagihan.id).then((rows) => { if (!cancelled) setHistory(rows); })
       .catch((err: Error) => { if (!cancelled) setError(err.message); });
     return () => { cancelled = true; };
   }, [tagihan.id]);
-<<<<<<< Updated upstream
-  return <Modal title="Kuitansi Pembayaran" onClose={onClose}>
-    <article className="receipt-print-area space-y-4 rounded-lg border p-4 text-sm">
-      <header className="space-y-1 border-b pb-3"><p className="text-xl font-semibold">{admin?.nama_kos || 'Kos Gopi'}</p>{admin?.alamat_kos && <p className="text-muted-foreground">{admin.alamat_kos}</p>}<p className="text-xs text-muted-foreground">{'INV-' + tagihan.bulan.replace('-', '') + '-' + tagihan.id}</p><Status tagihan={tagihan} /></header>
-=======
 
   const invCode = `INV-${tagihan.bulan.replace('-', '')}-${tagihan.id}`;
 
@@ -945,15 +891,11 @@ function ReceiptModal({ tagihan, admin, notify, onClose }: { tagihan: Tagihan; a
   return <Modal title="Kuitansi Pembayaran" onClose={onClose}>
     <article className="space-y-4 rounded-lg border bg-background p-4 text-sm">
       <header className="space-y-1 border-b pb-3"><p className="text-xl font-semibold">{admin?.nama_kos || 'Kos Gopi'}</p>{admin?.alamat_kos && <p className="text-muted-foreground">{admin.alamat_kos}</p>}<p className="text-xs text-muted-foreground">{invCode}</p><Status tagihan={tagihan} /></header>
->>>>>>> Stashed changes
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2"><dt className="text-muted-foreground">Diterima dari</dt><dd className="break-words font-medium">{tagihan.penghuni_nama}</dd><dt className="text-muted-foreground">Kamar</dt><dd>{tagihan.kamar_nomor}</dd><dt className="text-muted-foreground">Periode</dt><dd>{namaBulan(tagihan.bulan)} ({formatPeriodeSewa(tagihan.periode_sewa, tagihan.durasi_sewa)})</dd></dl>
       <div className="space-y-2 rounded-md bg-muted/50 p-3 tabular-nums"><p className="flex justify-between gap-2"><span>Total tagihan</span><strong>{rupiah(tagihan.nominal)}</strong></p><p className="flex justify-between gap-2"><span>Sudah diterima</span><strong>{rupiah(tagihan.terbayar)}</strong></p><p className="flex justify-between gap-2 border-t pt-2"><span>Sisa tagihan</span><strong>{rupiah(tagihan.sisa)}</strong></p></div>
       {error ? <p role="alert" className="text-destructive">Riwayat tidak dapat dimuat: {error}</p> : !history ? <p role="status">Memuat riwayat pembayaran…</p> : <div className="space-y-2"><p className="font-medium">Rincian pembayaran</p>{history.map((row) => <div key={row.id} className="border-b pb-2"><p className="flex justify-between gap-2"><span>{tanggal(row.tanggal_bayar)}</span><strong className="tabular-nums">{rupiah(row.jumlah)}</strong></p><p className="text-xs text-muted-foreground">{row.metode_pembayaran}</p>{row.catatan && <p className="break-words text-xs">{row.catatan}</p>}</div>)}</div>}
       <footer className="border-t pt-3 text-xs text-muted-foreground"><p>{tagihan.status === 'Lunas' ? 'Terima kasih atas pembayaran Anda.' : 'Bukti pembayaran sebagian. Sisa tagihan belum lunas.'}</p><p className="mt-3 font-medium text-foreground">{admin?.nama || 'Pengelola Kos'}</p></footer>
     </article>
-<<<<<<< Updated upstream
-    <div className="flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={onClose}>Tutup</Button><Button disabled={!history || !!error} onClick={() => window.print()}><Printer /> Cetak / Simpan PDF</Button></div>
-=======
     <div className="flex flex-wrap justify-end gap-2">
       <Button variant="outline" onClick={onClose}>Tutup</Button>
       <Button variant="outline" disabled={!history || !!error || sendingTg} onClick={kirimKeTelegram}>
@@ -966,6 +908,5 @@ function ReceiptModal({ tagihan, admin, notify, onClose }: { tagihan: Tagihan; a
         <FileDown /> Screenshot ke PDF
       </Button>
     </div>
->>>>>>> Stashed changes
   </Modal>;
 }

@@ -1,9 +1,3 @@
-<<<<<<< Updated upstream
-// EP-05 WBS 5.1-5.2: chatbot penagihan. Logika tidak bergantung platform; server/telegram.ts menyambungkannya ke Telegram.
-import { db } from './db.ts';
-import { getTagihan } from './app.ts';
-import { buatLinkPembayaran, PembayaranError } from './pembayaran-online.ts';
-=======
 // EP-05 WBS 5.1-5.2: chatbot penagihan & integrasi keluhan Telegram. Logika tidak bergantung platform; server/telegram.ts menyambungkannya ke Telegram.
 import { db } from './db.ts';
 import { getTagihan } from './app.ts';
@@ -11,7 +5,6 @@ import { tanggalJakarta } from './dates.ts';
 import { buatLinkPembayaran, PembayaranError } from './pembayaran-online.ts';
 import { validateKeluhan } from './validation.ts';
 import type { PrioritasKeluhan } from './validation.ts';
->>>>>>> Stashed changes
 
 type Row = Record<string, unknown>;
 export type Tombol = { teks: string; url?: string; data?: string };
@@ -24,9 +17,6 @@ const namaKos = () =>
   ((db.prepare('SELECT nama_kos FROM admin_profile WHERE aktif = 1 LIMIT 1').get() as Row | undefined)?.nama_kos as string) || 'Kos Gopi';
 
 const penghuniDariChat = (chatId: string) =>
-<<<<<<< Updated upstream
-  db.prepare('SELECT id, nama, kamar_id FROM penghuni WHERE chat_id = ?').get(chatId) as Row | undefined;
-=======
   db.prepare(`
     SELECT p.id, p.nama, p.kamar_id, p.periode_sewa, p.durasi_sewa,
            COALESCE(p.harga_sewa, k.harga) AS harga_sewa,
@@ -35,14 +25,11 @@ const penghuniDariChat = (chatId: string) =>
     JOIN kamar k ON k.id = p.kamar_id
     WHERE p.chat_id = ? AND p.aktif = 1
   `).get(chatId) as Row | undefined;
->>>>>>> Stashed changes
 
 const tagihanTerbuka = (penghuniId: number) =>
   (db.prepare(`SELECT id FROM tagihan WHERE penghuni_id = ? AND status = 'Belum Lunas' ORDER BY bulan ASC`).all(penghuniId) as { id: number }[])
     .map((r) => getTagihan(r.id) as Row);
 
-<<<<<<< Updated upstream
-=======
 const KATEGORI_KELUHAN = [
   'Elektronik & AC',
   'Plumbing & Sanitasi',
@@ -76,17 +63,13 @@ const FORMAT_KELUHAN = [
   'Pilihan Prioritas: Rendah, Sedang, Tinggi (default: Sedang)',
 ].join('\n');
 
->>>>>>> Stashed changes
 const BANTUAN = [
   'Perintah yang tersedia:',
   '/tagihan — lihat tagihan yang belum lunas',
   '/bayar — bayar tagihan secara online',
-<<<<<<< Updated upstream
-=======
   '/keluhan — lapor keluhan fasilitas kamar (dengan format)',
   '/statuskeluhan — lihat progres keluhan kamar Anda',
   '/info — lihat informasi kamar & masa sewa Anda',
->>>>>>> Stashed changes
   '/putus — putuskan akun chat ini dari data penghuni',
 ].join('\n');
 
@@ -130,14 +113,6 @@ async function kirimLinkBayar(chatId: string, penghuniId: number, tagihanId: num
   }
 }
 
-<<<<<<< Updated upstream
-/** Tangani satu pesan masuk. */
-export async function tanganiPesan({ chatId, teks = '', data }: PesanMasuk, kirim: Kirim) {
-  const penghuni = penghuniDariChat(chatId);
-  const perintah = teks.trim().toLowerCase();
-
-  const hubung = /^\/?hubung\s+(\d{6})$/i.exec(teks.trim());
-=======
 const rapikanKategori = (raw: string) =>
   KATEGORI_KELUHAN.find((k) => k.toLowerCase() === raw.toLowerCase()) ?? raw;
 
@@ -269,38 +244,20 @@ export async function tanganiPesan({ chatId, teks = '', data }: PesanMasuk, kiri
   const perintah = trimmed.toLowerCase();
 
   const hubung = /^\/?hubung(?:@\w+)?\s+(\d{6})$/i.exec(trimmed);
->>>>>>> Stashed changes
   if (hubung) {
     const p = db.prepare('SELECT id, nama FROM penghuni WHERE kode_hubung = ? AND aktif = 1').get(hubung[1]) as Row | undefined;
     if (!p) return kirim(chatId, 'Kode tidak valid atau sudah dipakai. Minta kode baru ke pemilik kos.');
     db.prepare('UPDATE penghuni SET chat_id = NULL WHERE chat_id = ?').run(chatId);
     db.prepare('UPDATE penghuni SET chat_id = ?, kode_hubung = NULL WHERE id = ?').run(chatId, p.id as number);
-<<<<<<< Updated upstream
-    return kirim(chatId, `Terhubung sebagai ${p.nama}. Anda akan menerima pengingat tagihan di sini.\n\n${BANTUAN}`);
-  }
-
-  if (!penghuni) {
-    return kirim(chatId, `Halo! Ini bot tagihan ${namaKos()}.\nUntuk mulai, minta kode 6 digit ke pemilik kos lalu kirim:\n/hubung 123456`);
-=======
     return kirim(chatId, `Terhubung sebagai ${p.nama}. Anda akan menerima pengingat tagihan & info keluhan di sini.\n\n${BANTUAN}`);
   }
 
   if (!penghuni) {
     return kirim(chatId, `Halo! Ini bot layanan ${namaKos()}.\nUntuk mulai, minta kode 6 digit ke pemilik kos lalu kirim:\n/hubung 123456`);
->>>>>>> Stashed changes
   }
   const pid = penghuni.id as number;
 
   if (data?.startsWith('bayar:')) return kirimLinkBayar(chatId, pid, Number(data.slice(6)), kirim);
-<<<<<<< Updated upstream
-  if (perintah === '/putus') {
-    db.prepare('UPDATE penghuni SET chat_id = NULL WHERE id = ?').run(pid);
-    return kirim(chatId, 'Akun chat ini sudah diputus dari data penghuni.');
-  }
-  // Kenali perintah bayar dalam bahasa sehari-hari juga ("mau bayar", "bayar kos").
-  if (perintah === '/bayar' || /\bbayar\b/.test(perintah)) return kirimDaftarTagihan(chatId, pid, kirim, true);
-  if (perintah === '/tagihan' || /\btagihan\b/.test(perintah)) return kirimDaftarTagihan(chatId, pid, kirim, false);
-=======
   if (data === 'statuskeluhan') return kirimStatusKeluhan(chatId, penghuni, kirim);
   if (data === 'tagihan') return kirimDaftarTagihan(chatId, pid, kirim, false);
 
@@ -329,7 +286,6 @@ export async function tanganiPesan({ chatId, teks = '', data }: PesanMasuk, kiri
     if (/\btagihan\b/i.test(perintah)) return kirimDaftarTagihan(chatId, pid, kirim, false);
   }
 
->>>>>>> Stashed changes
   return kirim(chatId, `Halo ${penghuni.nama}!\n${BANTUAN}`);
 }
 
@@ -347,15 +303,6 @@ export async function kirimPengingatChat(daftar: Row[], kirim: Kirim) {
   return terkirim;
 }
 
-<<<<<<< Updated upstream
-/** Konfirmasi ke penghuni setelah pembayaran online tercatat. */
-export async function kirimKonfirmasiBayar(tagihan: Row, kirim: Kirim) {
-  const p = db.prepare('SELECT chat_id FROM penghuni WHERE id = ? AND chat_id IS NOT NULL').get(tagihan.penghuni_id as number) as Row | undefined;
-  if (!p) return;
-  const sisa = tagihan.sisa as number;
-  await kirim(p.chat_id as string, `Pembayaran diterima untuk ${tagihan.kamar_nomor} periode ${tagihan.bulan}. ${sisa > 0 ? `Sisa tagihan ${rp(sisa)}.` : 'Tagihan sudah LUNAS. Terima kasih!'}`);
-}
-=======
 /** Konfirmasi ke penghuni setelah pembayaran online atau manual tercatat. */
 export async function kirimKonfirmasiBayar(tagihan: Row, kirim: Kirim) {
   const p = db.prepare('SELECT chat_id FROM penghuni WHERE id = ? AND chat_id IS NOT NULL').get(tagihan.penghuni_id as number) as Row | undefined;
@@ -475,4 +422,3 @@ export async function kirimKuitansiTelegram(tagihan: Row, pembayaranList: Row[],
   ].join('\n');
   await kirim(chatId, teks);
 }
->>>>>>> Stashed changes

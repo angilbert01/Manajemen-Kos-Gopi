@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-<<<<<<< Updated upstream
-=======
 import { Bot, User } from 'lucide-react';
->>>>>>> Stashed changes
 import {
   api,
   ApiError,
@@ -16,15 +13,10 @@ import {
   today,
 } from '../api';
 import type { Kamar, Penghuni, PenghuniForm, PeriodeSewa } from '../api';
-<<<<<<< Updated upstream
-import { Field, Modal, selectClass } from '../components';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-=======
 import { initials } from '../app-sidebar';
 import { Field, Modal, selectClass } from '../components';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
->>>>>>> Stashed changes
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -70,10 +62,7 @@ export default function PenghuniPage({ notify, presetKamarId, onChanged }: Props
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [aturSewa, setAturSewa] = useState<Penghuni | null>(null);
-<<<<<<< Updated upstream
-=======
   const [profilTarget, setProfilTarget] = useState<Penghuni | null>(null);
->>>>>>> Stashed changes
   const namaRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -121,19 +110,7 @@ export default function PenghuniPage({ notify, presetKamarId, onChanged }: Props
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-<<<<<<< Updated upstream
-    const local: Record<string, string> = {};
-    if (!form.nama.trim()) local.nama = 'Nama wajib diisi.';
-    if (!form.no_hp.trim()) local.no_hp = 'Nomor HP wajib diisi.';
-    else if (!PHONE_RE.test(form.no_hp.replace(/[\s.-]/g, ''))) local.no_hp = 'Nomor HP tidak valid (contoh: 081234567890).';
-    if (!form.kamar_id) local.kamar_id = 'Pilih kamar.';
-    if (!form.tanggal_masuk) local.tanggal_masuk = 'Tanggal masuk wajib diisi.';
-    const dur = Number(form.durasi_sewa || 1);
-    if (!Number.isInteger(dur) || dur < 1) local.durasi_sewa = 'Lama penyewaan minimal 1.';
-    if (!form.harga_sewa || !(Number(form.harga_sewa) > 0)) local.harga_sewa = 'Masukkan nominal tagihan sewa (Rp).';
-=======
     const local = validatePenghuniFormLocal(form);
->>>>>>> Stashed changes
     setErrors(local);
     if (Object.keys(local).length) return;
     setSaving(true);
@@ -195,11 +172,7 @@ export default function PenghuniPage({ notify, presetKamarId, onChanged }: Props
       <section className="grid gap-4 lg:grid-cols-3">
         <Card className="min-w-0 lg:col-span-2">
           <CardHeader>
-<<<<<<< Updated upstream
-            <CardTitle>Daftar Penghuni {semua ? '(Termasuk Riwayat)' : 'Aktif'}</CardTitle>
-=======
             <CardTitle>Daftar Penghuni {semua ? '(Termasuk Riwayat)' : 'Aktif'} · Urut Kamar</CardTitle>
->>>>>>> Stashed changes
             <CardAction>
               <label className="flex items-center gap-2 text-sm text-muted-foreground">
                 <input
@@ -224,13 +197,8 @@ export default function PenghuniPage({ notify, presetKamarId, onChanged }: Props
               <Table>
                 <TableHeader>
                   <TableRow>
-<<<<<<< Updated upstream
-                    <TableHead>Penghuni</TableHead>
-                    <TableHead>Kamar & Sewa</TableHead>
-=======
                     <TableHead>Kamar & Sewa</TableHead>
                     <TableHead>Penghuni</TableHead>
->>>>>>> Stashed changes
                     <TableHead>Masa Sewa</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead />
@@ -241,25 +209,12 @@ export default function PenghuniPage({ notify, presetKamarId, onChanged }: Props
                     shown.map((p) => (
                       <TableRow key={p.id}>
                         <TableCell>
-<<<<<<< Updated upstream
-                          <div className="flex items-center gap-1.5 font-medium">
-                            {p.nama}
-                            {p.chat_terhubung === 1 && <Badge variant="outline" className="border-sky-200 bg-sky-50 text-sky-800">Chatbot</Badge>}
-                          </div>
-                          <div className="text-xs text-muted-foreground tabular-nums">{p.no_hp}</div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="font-medium">{p.kamar_nomor}</div>
-=======
                           <div className="font-semibold text-foreground">{p.kamar_nomor}</div>
->>>>>>> Stashed changes
                           <div className="text-xs text-muted-foreground tabular-nums">
                             {rupiah(p.harga_sewa ?? p.kamar_harga ?? 0)} · {formatPeriodeSewa(p.periode_sewa ?? 'Bulanan', p.durasi_sewa ?? 1)}
                           </div>
                         </TableCell>
                         <TableCell>
-<<<<<<< Updated upstream
-=======
                           <div className="flex items-center gap-1.5 font-medium">
                             <button
                               type="button"
@@ -273,7 +228,6 @@ export default function PenghuniPage({ notify, presetKamarId, onChanged }: Props
                           <div className="text-xs text-muted-foreground tabular-nums">{p.no_hp}</div>
                         </TableCell>
                         <TableCell>
->>>>>>> Stashed changes
                           <div>{tanggal(p.tanggal_masuk)}</div>
                           {p.tanggal_selesai_sewa && (
                             <div className="text-xs text-muted-foreground">s/d {tanggal(p.tanggal_selesai_sewa)}</div>
@@ -291,21 +245,6 @@ export default function PenghuniPage({ notify, presetKamarId, onChanged }: Props
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-<<<<<<< Updated upstream
-                          {p.aktif === 1 && (
-                            <div className="flex flex-wrap justify-end gap-1.5">
-                              <Button size="sm" variant="outline" onClick={() => setAturSewa(p)}>
-                                Atur Sewa
-                              </Button>
-                              <Button size="sm" variant="ghost" onClick={() => buatKodeChat(p)}>
-                                {p.chat_terhubung === 1 ? 'Ganti Chat' : 'Kode Chatbot'}
-                              </Button>
-                              <Button size="sm" variant="outline" onClick={() => keluar(p)}>
-                                Catat Keluar
-                              </Button>
-                            </div>
-                          )}
-=======
                           <div className="flex flex-wrap justify-end gap-1.5">
                             <Button size="sm" variant="outline" onClick={() => setProfilTarget(p)}>
                               <User /> Profil
@@ -324,7 +263,6 @@ export default function PenghuniPage({ notify, presetKamarId, onChanged }: Props
                               </>
                             )}
                           </div>
->>>>>>> Stashed changes
                         </TableCell>
                       </TableRow>
                     ))
@@ -495,8 +433,6 @@ export default function PenghuniPage({ notify, presetKamarId, onChanged }: Props
           }}
         />
       )}
-<<<<<<< Updated upstream
-=======
       {profilTarget && (
         <ProfilPenghuniModal
           penghuni={profilTarget}
@@ -515,13 +451,10 @@ export default function PenghuniPage({ notify, presetKamarId, onChanged }: Props
           }}
         />
       )}
->>>>>>> Stashed changes
     </>
   );
 }
 
-<<<<<<< Updated upstream
-=======
 function ProfilPenghuniModal({
   penghuni,
   kamarList,
@@ -727,7 +660,6 @@ function ProfilPenghuniModal({
   );
 }
 
->>>>>>> Stashed changes
 function AturSewaModal({
   penghuni,
   onClose,

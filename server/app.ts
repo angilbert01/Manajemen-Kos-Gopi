@@ -19,9 +19,6 @@ import {
   validateUpdateTagihan,
 } from './validation.ts';
 import type { StatusKeluhan } from './validation.ts';
-<<<<<<< Updated upstream
-import { buatKodeHubung } from './bot.ts';
-=======
 import {
   buatKodeHubung,
   kirimKuitansiTelegram,
@@ -30,7 +27,6 @@ import {
   TelegramBelumTerhubungError,
 } from './bot.ts';
 import type { Kirim } from './bot.ts';
->>>>>>> Stashed changes
 import {
   buatLinkPembayaran,
   halamanSimulasi,
@@ -550,8 +546,6 @@ export function createApp() {
     } catch (err) { mapDbError(err); }
   });
 
-<<<<<<< Updated upstream
-=======
   // Perbarui profil lengkap penghuni aktif (nama, no HP, pindah kamar kosong, tanggal masuk, & pengaturan sewa).
   app.put('/api/penghuni/:id', (req, res) => {
     const id = idParam(req);
@@ -627,7 +621,6 @@ export function createApp() {
     }
   });
 
->>>>>>> Stashed changes
   // Atur ulang harga dan jangka waktu sewa (Harian/Mingguan/Bulanan/Tahunan) untuk penghuni aktif.
   app.patch('/api/penghuni/:id/sewa', (req, res) => {
     const id = idParam(req);
@@ -762,13 +755,9 @@ export function createApp() {
       return Number(ins.lastInsertRowid);
     });
 
-<<<<<<< Updated upstream
-    res.status(201).json(getTagihan(tagihanId));
-=======
     const updated = getTagihan(tagihanId) as Row;
     appHooks.tagihanUpdated(updated);
     res.status(201).json(updated);
->>>>>>> Stashed changes
   });
 
   app.get('/api/tagihan', (req, res) => {
@@ -893,13 +882,9 @@ export function createApp() {
       }
     });
 
-<<<<<<< Updated upstream
-    res.json(getTagihan(id));
-=======
     const updated = getTagihan(id) as Row;
     appHooks.tagihanUpdated(updated);
     res.json(updated);
->>>>>>> Stashed changes
   });
 
   // WBS 2.3 (jalan pintas): lunasi SISA tagihan dalam 1 pembayaran. Bayar langsung 1 bulan = cukup ini.
@@ -921,13 +906,9 @@ export function createApp() {
       });
     } catch (err) { mapDbError(err); }
 
-<<<<<<< Updated upstream
-    res.json(getTagihan(id));
-=======
     const updated = getTagihan(id) as Row;
     appHooks.pembayaranDicatat(updated);
     res.json(updated);
->>>>>>> Stashed changes
   });
 
   // Undo: batalkan SEMUA pembayaran aktif tagihan ini -> kembali 'Belum Lunas' (riwayat tetap tersimpan).
@@ -951,30 +932,6 @@ export function createApp() {
     throw err;
   };
 
-<<<<<<< Updated upstream
-  app.post('/api/tagihan/:id/link-bayar', async (req, res) => {
-    const trx = await buatLinkPembayaran(idParam(req)).catch(tanganiPembayaranError);
-    res.status(201).json({ order_id: trx.order_id, payment_url: trx.payment_url, jumlah: trx.jumlah, provider: trx.provider });
-  });
-
-  app.get('/api/tagihan/:id/transaksi-online', (req, res) => {
-    const id = idParam(req);
-    if (!getTagihan(id)) throw new HttpError(404, 'Tagihan tidak ditemukan.');
-    res.json(db.prepare(`SELECT order_id, provider, jumlah, payment_url, status, created_at, updated_at
-      FROM transaksi_online WHERE tagihan_id = ? ORDER BY id DESC`).all(id));
-  });
-
-  // Notifikasi HTTP dari Midtrans (butuh URL publik); tanpa itu server memeriksa status berkala.
-  app.post('/api/pembayaran-online/notifikasi', (req, res) => {
-    const body = (req.body ?? {}) as Record<string, unknown>;
-    if (!signatureValid(body)) throw new HttpError(403, 'Signature tidak valid.');
-    try {
-      terapkanStatus(String(body.order_id), petaStatusMidtrans(String(body.transaction_status), body.fraud_status as string | undefined));
-    } catch (err) { tanganiPembayaranError(err); }
-    res.json({ ok: true });
-  });
-
-=======
   const kirimLangsung: Kirim = async (chatId, teks, tombol) => {
     if (!appHooks.kirimTelegram) {
       throw new HttpError(503, 'Bot Telegram belum aktif. Isi TELEGRAM_BOT_TOKEN di file .env lalu restart server.');
@@ -1025,7 +982,6 @@ export function createApp() {
     res.json({ ok: true });
   });
 
->>>>>>> Stashed changes
   // Mode simulasi (tanpa akun payment gateway): halaman bayar tiruan.
   app.get('/api/pembayaran-online/simulasi/:orderId', (req, res) => {
     res.type('html').send(halamanSimulasi(req.params.orderId));
@@ -1249,20 +1205,13 @@ export function createApp() {
        WHERE id = ?`,
     ).run(statusBaru, catatanFinal, tanggalSelesai, id);
 
-<<<<<<< Updated upstream
-    res.json(getKeluhan(id));
-=======
     const updated = getKeluhan(id) as Row;
     appHooks.keluhanStatusChanged(updated);
     res.json(updated);
->>>>>>> Stashed changes
   };
 
   app.patch('/api/keluhan/:id/status', handleUpdateStatusKeluhan);
   app.put('/api/keluhan/:id/status', handleUpdateStatusKeluhan);
-<<<<<<< Updated upstream
-  // Keluhan sengaja tidak bisa dihapus (MOV: 100% keluhan tercatat); laporan ganda ditutup Selesai dengan catatan.
-=======
 
   app.post('/api/keluhan/:id/kirim-telegram', async (req, res) => {
     const row = getKeluhan(idParam(req)) as Row | undefined;
@@ -1288,7 +1237,6 @@ export function createApp() {
     db.prepare('DELETE FROM keluhan WHERE id = ?').run(id);
     res.status(204).end();
   });
->>>>>>> Stashed changes
 
   // ---------- Error handling & Frontend Produksi ----------
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Endpoint tidak ditemukan.')));

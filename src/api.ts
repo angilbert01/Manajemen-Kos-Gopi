@@ -352,20 +352,8 @@ export const api = {
   },
   penghuni: {
     list: (semua = false) => request<Penghuni[]>('GET', `/penghuni${semua ? '?semua=1' : ''}`),
-<<<<<<< Updated upstream
-    create: (f: PenghuniForm) =>
-      request<Penghuni>('POST', '/penghuni', {
-        ...f,
-        kamar_id: Number(f.kamar_id),
-        periode_sewa: f.periode_sewa || 'Bulanan',
-        durasi_sewa: f.durasi_sewa ? Number(f.durasi_sewa) : 1,
-        harga_sewa: f.harga_sewa ? Number(f.harga_sewa) : undefined,
-        tanggal_selesai_sewa: f.tanggal_selesai_sewa || undefined,
-      }),
-=======
     create: (f: PenghuniForm) => request<Penghuni>('POST', '/penghuni', payloadPenghuni(f)),
     update: (id: number, f: PenghuniForm) => request<Penghuni>('PUT', `/penghuni/${id}`, payloadPenghuni(f)),
->>>>>>> Stashed changes
     aturSewa: (id: number, payload: SewaPenghuniPayload) =>
       request<Penghuni>('PATCH', `/penghuni/${id}/sewa`, payload),
     keluar: (id: number) => request<Penghuni>('PATCH', `/penghuni/${id}/keluar`, {}),
@@ -383,11 +371,8 @@ export const api = {
     bayar: (id: number, payload: PembayaranPayload) => request<Tagihan>('POST', `/tagihan/${id}/pembayaran`, payload),
     hapusPembayaran: (pembayaranId: number) => request<Tagihan>('DELETE', `/pembayaran/${pembayaranId}`),
     pengingat: () => request<PengingatTagihan[]>('GET', '/tagihan/pengingat'),
-<<<<<<< Updated upstream
-=======
     kirimTelegram: (id: number) => request<{ terkirim: boolean }>('POST', `/tagihan/${id}/kirim-telegram`, {}),
     kirimKuitansiTelegram: (id: number) => request<{ terkirim: boolean }>('POST', `/tagihan/${id}/kirim-kuitansi-telegram`, {}),
->>>>>>> Stashed changes
     linkBayar: (id: number) =>
       request<{ order_id: string; payment_url: string; jumlah: number; provider: 'midtrans' | 'simulasi' }>('POST', `/tagihan/${id}/link-bayar`, {}),
   },
@@ -403,24 +388,15 @@ export const api = {
       }),
     updateStatus: (id: number, payload: UpdateStatusKeluhanPayload) =>
       request<Keluhan>('PATCH', `/keluhan/${id}/status`, payload),
-<<<<<<< Updated upstream
-=======
     kirimTelegram: (id: number) => request<{ terkirim: boolean }>('POST', `/keluhan/${id}/kirim-telegram`, {}),
     remove: (id: number) => request<void>('DELETE', `/keluhan/${id}`),
     clearRiwayat: () => request<{ dihapus: number }>('DELETE', '/keluhan/riwayat'),
->>>>>>> Stashed changes
   },
 };
 
 export const rupiah = (amount: number) => `Rp ${amount.toLocaleString('id-ID')}`;
 export const tanggal = (iso: string) =>
   new Date(`${iso}T00:00:00`).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
-<<<<<<< Updated upstream
-/** Link wa.me dengan pesan terisi. Nomor 08xx / +628xx / 628xx dinormalkan ke 628xx. */
-export const waLink = (noHp: string, pesan: string) =>
-  `https://wa.me/${noHp.replace(/\D/g, '').replace(/^0/, '62')}?text=${encodeURIComponent(pesan)}`;
-=======
->>>>>>> Stashed changes
 
 export const today = () => {
   const d = new Date();

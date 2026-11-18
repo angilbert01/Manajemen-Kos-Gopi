@@ -12,13 +12,8 @@ delete process.env.MIDTRANS_SERVER_KEY;
 const dir = mkdtempSync(join(tmpdir(), 'kos-chatbot-'));
 process.env.DB_PATH = join(dir, 'test.db');
 const { migrate, db } = await import('./db.ts');
-<<<<<<< Updated upstream
-const { createApp } = await import('./app.ts');
-const { tanganiPesan, kirimPengingatChat } = await import('./bot.ts');
-=======
 const { appHooks, createApp } = await import('./app.ts');
 const { tanganiPesan, kirimPengingatChat, kirimUpdateStatusKeluhan } = await import('./bot.ts');
->>>>>>> Stashed changes
 const { petaStatusMidtrans, signatureValid, terapkanStatus, hooks } = await import('./pembayaran-online.ts');
 const { tanggalJakarta } = await import('./dates.ts');
 type Tombol = { teks: string; url?: string; data?: string };
@@ -156,8 +151,6 @@ test('TC-Bot-06 pengingat H-0 terkirim hanya ke penghuni yang chat-nya terhubung
   assert.match((await kirimDan('900', { teks: '/putus' })).teks, /diputus/);
   assert.equal(await kirimPengingatChat(daftar, kirim), 0);
 });
-<<<<<<< Updated upstream
-=======
 
 test('TC-Bot-07 /keluhan menampilkan panduan format dan menyimpan keluhan berformat ke database', async () => {
   const { body: { kode } } = await call('POST', `/penghuni/${penghuniId}/kode-chat`);
@@ -272,4 +265,3 @@ test('TC-Bot-09 endpoint kirim-telegram untuk tagihan, kuitansi, dan keluhan', a
   assert.match(pesan[0]!.teks, /Update Keluhan/);
   assert.match(pesan[0]!.teks, /AC bocor/);
 });
->>>>>>> Stashed changes

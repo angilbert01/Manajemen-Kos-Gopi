@@ -719,8 +719,6 @@ test('TC-Sewa-05: Input manual nominal tagihan dan jangka penyewaan lewat POST /
   assert.equal(pm.durasi_sewa, 5);
   assert.equal(pm.tanggal_selesai_sewa, '2026-11-25');
 });
-<<<<<<< Updated upstream
-=======
 
 test('TC-Penghuni-01: Edit profil penghuni aktif & pindah kamar kosong (PUT /api/penghuni/:id)', async () => {
   const k1 = await call('POST', '/kamar', { nomor: 'P-01', tipe: 'Bulanan', harga: 1000000 });
@@ -803,4 +801,3 @@ test('TC-Penghuni-02: GET /api/penghuni diurutkan berdasarkan nomor kamar', asyn
   const urutU = list.filter((p) => p.kamar_nomor.startsWith('U')).map((p) => p.kamar_nomor);
   assert.deepEqual(urutU, ['U1', 'U2', 'U10']);
 });
->>>>>>> Stashed changes

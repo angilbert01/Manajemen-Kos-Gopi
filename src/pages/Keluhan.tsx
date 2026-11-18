@@ -1,11 +1,3 @@
-<<<<<<< Updated upstream
-import React, { useCallback, useEffect, useState } from 'react';
-import {
-  AlertTriangle,
-  Check,
-  CheckCircle2,
-  Clock,
-=======
 import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import {
@@ -15,27 +7,11 @@ import {
   CheckCircle2,
   Clock,
   Copy,
->>>>>>> Stashed changes
   ExternalLink,
   Eye,
   Filter,
   Flame,
   Home,
-<<<<<<< Updated upstream
-  MessageSquare,
-  MessageSquareWarning,
-  Pencil,
-  PlusCircle,
-  RefreshCw,
-  Search,
-  Send,
-  Sparkles,
-  User,
-  Wrench,
-} from 'lucide-react';
-import { api, ApiError, tanggal, today, waLink } from '../api';
-import type { Kamar, Keluhan, PrioritasKeluhan, RekapKeluhan, StatusKeluhan } from '../api';
-=======
   Pencil,
   RefreshCw,
   Search,
@@ -46,7 +22,6 @@ import type { Kamar, Keluhan, PrioritasKeluhan, RekapKeluhan, StatusKeluhan } fr
 } from 'lucide-react';
 import { api, ApiError, tanggal, today } from '../api';
 import type { Keluhan, PrioritasKeluhan, RekapKeluhan, StatusKeluhan } from '../api';
->>>>>>> Stashed changes
 import { Field, Modal, selectClass } from '../components';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -61,20 +36,6 @@ interface KeluhanPageProps {
   onChanged?: () => void;
 }
 
-<<<<<<< Updated upstream
-const KATEGORI_LIST = [
-  'Elektronik & AC',
-  'Plumbing & Sanitasi',
-  'Furnitur & Kasur',
-  'Kelistrikan',
-  'Kebersihan',
-  'Keamanan & Kunci',
-  'Fasilitas Kamar',
-  'Lainnya',
-];
-
-=======
->>>>>>> Stashed changes
 // Sama dengan aturan server (409 jika di luar ini): Pending -> Diproses -> Selesai, Selesai bisa dibuka kembali.
 const STATUS_BERIKUT: Record<StatusKeluhan, StatusKeluhan[]> = {
   Pending: ['Diproses'],
@@ -91,70 +52,12 @@ const LABEL_STATUS: Record<StatusKeluhan, string> = {
 const textareaClass =
   'flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:border-destructive';
 
-<<<<<<< Updated upstream
-const TEMPLAT_KELUHAN = [
-  {
-    judul: 'AC bocor dan tidak dingin',
-    deskripsi: 'Air AC menetes deras dari unit indoor, suhu kamar tidak dingin meski sudah disetel 18°C.',
-    kategori: 'Elektronik & AC',
-    prioritas: 'Tinggi' as PrioritasKeluhan,
-  },
-  {
-    judul: 'Kran air wastafel macet/patah',
-    deskripsi: 'Kran putaran wastafel doll/lepas sehingga air tidak bisa menyala lancar.',
-    kategori: 'Plumbing & Sanitasi',
-    prioritas: 'Sedang' as PrioritasKeluhan,
-  },
-  {
-    judul: 'Lampu utama kamar tidur putus',
-    deskripsi: 'Lampu LED plafon kamar mati total, mohon dibantu penggantian bohlam.',
-    kategori: 'Kelistrikan',
-    prioritas: 'Rendah' as PrioritasKeluhan,
-  },
-  {
-    judul: 'Kloset kamar mandi mampet',
-    deskripsi: 'Aliran pembuangan air kloset sangat lambat dan meluap saat disiram.',
-    kategori: 'Plumbing & Sanitasi',
-    prioritas: 'Tinggi' as PrioritasKeluhan,
-  },
-  {
-    judul: 'Gagang kunci pintu kamar dol',
-    deskripsi: 'Kunci sulit diputar dari luar, rawan terkunci sendiri atau sulit dibuka.',
-    kategori: 'Keamanan & Kunci',
-    prioritas: 'Tinggi' as PrioritasKeluhan,
-  },
-];
-
-=======
->>>>>>> Stashed changes
 const errorsDari = (err: unknown) =>
   err instanceof ApiError && Object.keys(err.errors).length ? err.errors : { _: (err as Error).message };
 
 export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
   const [keluhanList, setKeluhanList] = useState<Keluhan[]>([]);
   const [rekap, setRekap] = useState<RekapKeluhan | null>(null);
-<<<<<<< Updated upstream
-  const [kamarList, setKamarList] = useState<Kamar[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // View mode: 'semua' | 'penghuni' (WBS 3.1) | 'pemilik' (WBS 3.2)
-  const [viewMode, setViewMode] = useState<'semua' | 'penghuni' | 'pemilik'>('semua');
-
-  // Filter state
-  const [filterStatus, setFilterStatus] = useState<string>('semua');
-  const [filterPrioritas, setFilterPrioritas] = useState<string>('semua');
-  const [searchQuery, setSearchQuery] = useState('');
-
-  // Form input keluhan sisi penghuni (WBS 3.1)
-  const [formKamarId, setFormKamarId] = useState('');
-  const [formJudul, setFormJudul] = useState('');
-  const [formDeskripsi, setFormDeskripsi] = useState('');
-  const [formKategori, setFormKategori] = useState('Elektronik & AC');
-  const [formPrioritas, setFormPrioritas] = useState<PrioritasKeluhan>('Sedang');
-  const [formFotoUrl, setFormFotoUrl] = useState('');
-  const [submittingForm, setSubmittingForm] = useState(false);
-  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-=======
   const [loading, setLoading] = useState(true);
 
   // Tab & Filter state: keluhan Selesai otomatis pindah ke tab Riwayat Selesai.
@@ -163,7 +66,6 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
   const [filterPrioritas, setFilterPrioritas] = useState<string>('semua');
   const [searchQuery, setSearchQuery] = useState('');
   const [clearingRiwayat, setClearingRiwayat] = useState(false);
->>>>>>> Stashed changes
 
   // Modal Update Status sisi pemilik (WBS 3.2)
   const [modalKeluhan, setModalKeluhan] = useState<Keluhan | null>(null);
@@ -179,23 +81,6 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
   // Modal Detail Keluhan
   const [detailKeluhan, setDetailKeluhan] = useState<Keluhan | null>(null);
 
-<<<<<<< Updated upstream
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [list, rkp, kmr] = await Promise.all([
-        api.keluhan.list(),
-        api.keluhan.rekap().catch(() => null),
-        api.kamar.list(),
-      ]);
-      setKeluhanList(list);
-      setRekap(rkp);
-      setKamarList(kmr);
-    } catch (err) {
-      notify(err instanceof Error ? err.message : 'Gagal memuat data keluhan.');
-    } finally {
-      setLoading(false);
-=======
   const loadData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
@@ -209,73 +94,10 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
       if (!silent) notify(err instanceof Error ? err.message : 'Gagal memuat data keluhan.');
     } finally {
       if (!silent) setLoading(false);
->>>>>>> Stashed changes
     }
   }, [notify]);
 
   useEffect(() => {
-<<<<<<< Updated upstream
-    loadData();
-  }, [loadData]);
-
-  const selectedKamar = kamarList.find((k) => String(k.id) === formKamarId);
-
-  const resetForm = () => {
-    setFormJudul('');
-    setFormDeskripsi('');
-    setFormFotoUrl('');
-    setFormErrors({});
-  };
-
-  // Handle Simpan Keluhan Baru (WBS 3.1)
-  const handleSubmitKeluhan = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const errors: Record<string, string> = {};
-    if (!formKamarId) errors.kamar_id = 'Pilih kamar.';
-    if (!formJudul.trim()) errors.judul = 'Judul keluhan wajib diisi.';
-    if (!formDeskripsi.trim()) errors.deskripsi = 'Deskripsi keluhan wajib diisi.';
-
-    if (Object.keys(errors).length > 0) {
-      setFormErrors(errors);
-      return;
-    }
-    setFormErrors({});
-    setSubmittingForm(true);
-
-    try {
-      await api.keluhan.create({
-        kamar_id: Number(formKamarId),
-        // Penghuni selalu diambil dari kamar terpilih; kamar kosong = tanpa penghuni.
-        penghuni_id: selectedKamar?.penghuni_id ?? null,
-        judul: formJudul.trim(),
-        deskripsi: formDeskripsi.trim(),
-        kategori: formKategori,
-        prioritas: formPrioritas,
-        foto_url: formFotoUrl.trim() || undefined,
-        tanggal_lapor: today(),
-      });
-
-      notify('Keluhan berhasil dikirim dengan status Pending.');
-      resetForm();
-      await loadData();
-      onChanged?.();
-      setViewMode('semua');
-    } catch (err) {
-      setFormErrors(errorsDari(err));
-    } finally {
-      setSubmittingForm(false);
-    }
-  };
-
-  // Quick fill templat
-  const applyTemplat = (t: (typeof TEMPLAT_KELUHAN)[0]) => {
-    setFormJudul(t.judul);
-    setFormDeskripsi(t.deskripsi);
-    setFormKategori(t.kategori);
-    setFormPrioritas(t.prioritas);
-  };
-
-=======
     void loadData();
   }, [loadData]);
 
@@ -308,21 +130,16 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
     }
   };
 
->>>>>>> Stashed changes
   // Handle Cepat Ubah Status (1-klik WBS 3.2). Tanpa catatan/tanggal: server menyimpan catatan lama dan mengisi tanggal selesai.
   const handleQuickStatusChange = async (keluhan: Keluhan, statusBaru: StatusKeluhan) => {
     setBusyId(keluhan.id);
     try {
       await api.keluhan.updateStatus(keluhan.id, { status: statusBaru });
-<<<<<<< Updated upstream
-      notify(`Status keluhan diperbarui menjadi ${statusBaru}.`);
-=======
       notify(
         statusBaru === 'Selesai'
           ? 'Keluhan ditandai Selesai dan dipindahkan ke tab Riwayat Selesai.'
           : `Status keluhan diperbarui menjadi ${statusBaru}.`,
       );
->>>>>>> Stashed changes
       await loadData();
       onChanged?.();
     } catch (err) {
@@ -332,8 +149,6 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
     }
   };
 
-<<<<<<< Updated upstream
-=======
   const handleHapusRiwayat = async (keluhan: Keluhan) => {
     if (!window.confirm(`Hapus riwayat keluhan "${keluhan.judul}" (${keluhan.kamar_nomor}) secara permanen?`)) return;
     setBusyId(keluhan.id);
@@ -366,7 +181,6 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
     }
   };
 
->>>>>>> Stashed changes
   const bukaModalStatus = (k: Keluhan) => {
     setModalKeluhan(k);
     setModalStatus(k.status);
@@ -376,11 +190,7 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
   };
 
   // Handle Update Status lewat Modal (dengan input catatan teknisi/pemilik)
-<<<<<<< Updated upstream
-  const handleSaveModalStatus = async (e: React.FormEvent) => {
-=======
   const handleSaveModalStatus = async (e: FormEvent) => {
->>>>>>> Stashed changes
     e.preventDefault();
     if (!modalKeluhan) return;
     setUpdatingStatus(true);
@@ -396,15 +206,11 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
             : undefined,
       });
 
-<<<<<<< Updated upstream
-      notify(`Keluhan "${modalKeluhan.judul}" berhasil diperbarui (${modalStatus}).`);
-=======
       notify(
         modalStatus === 'Selesai'
           ? `Keluhan "${modalKeluhan.judul}" selesai & dipindahkan ke Riwayat Selesai.`
           : `Keluhan "${modalKeluhan.judul}" berhasil diperbarui (${modalStatus}).`,
       );
->>>>>>> Stashed changes
       setModalKeluhan(null);
       await loadData();
       onChanged?.();
@@ -415,10 +221,6 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
     }
   };
 
-<<<<<<< Updated upstream
-  // Filter list
-  const filteredList = keluhanList.filter((k) => {
-=======
   const aktifCount = rekap?.aktif ?? keluhanList.filter((k) => k.status !== 'Selesai').length;
   const selesaiCount = rekap?.selesai ?? keluhanList.filter((k) => k.status === 'Selesai').length;
   const totalCount = rekap?.total ?? keluhanList.length;
@@ -432,7 +234,6 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
   const filteredList = keluhanList.filter((k) => {
     if (tabTampilan === 'aktif' && k.status === 'Selesai') return false;
     if (tabTampilan === 'riwayat' && k.status !== 'Selesai') return false;
->>>>>>> Stashed changes
     if (filterStatus !== 'semua' && k.status !== filterStatus) return false;
     if (filterPrioritas !== 'semua' && k.prioritas !== filterPrioritas) return false;
     if (searchQuery.trim()) {
@@ -497,63 +298,6 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
     }
   };
 
-<<<<<<< Updated upstream
-  // Link WhatsApp untuk konfirmasi penanganan ke penghuni
-  const linkWhatsApp = (keluhan: Keluhan) =>
-    waLink(
-      keluhan.penghuni_no_hp,
-      `Halo Kak ${keluhan.penghuni_nama} (${keluhan.kamar_nomor}),\n\n` +
-        `Mengenai laporan keluhan fasilitas:\n` +
-        `*${keluhan.judul}*\n` +
-        `Status saat ini: *${keluhan.status.toUpperCase()}*\n` +
-        (keluhan.catatan_penanganan ? `Catatan penanganan: ${keluhan.catatan_penanganan}\n` : '') +
-        `\nTerima kasih atas laporannya. Kami terus berupaya menjaga kenyamanan Kos Gopi.`,
-    );
-
-  return (
-    <div className="space-y-6">
-      {/* Header Info & Switcher Mode (WBS 3.1 & WBS 3.2) */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Keluhan Fasilitas</h2>
-          <p className="text-sm text-muted-foreground">
-            Pencatatan dan penanganan kerusakan fasilitas kamar antara penghuni dan pemilik kos.
-          </p>
-        </div>
-
-        {/* View Mode Pills */}
-        <div className="flex items-center rounded-lg border bg-muted/30 p-1">
-          <Button
-            type="button"
-            variant={viewMode === 'semua' ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-8 text-xs font-medium"
-            onClick={() => setViewMode('semua')}
-          >
-            Panel Terpadu
-          </Button>
-          <Button
-            type="button"
-            variant={viewMode === 'penghuni' ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-8 gap-1.5 text-xs font-medium"
-            onClick={() => setViewMode('penghuni')}
-          >
-            <PlusCircle className="size-3.5" />
-            Sisi Penghuni
-          </Button>
-          <Button
-            type="button"
-            variant={viewMode === 'pemilik' ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-8 gap-1.5 text-xs font-medium"
-            onClick={() => setViewMode('pemilik')}
-          >
-            <Wrench className="size-3.5" />
-            Sisi Pemilik
-          </Button>
-        </div>
-=======
   const handleKirimTelegram = async (keluhan: Keluhan) => {
     setBusyId(keluhan.id);
     try {
@@ -574,7 +318,6 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
         <p className="text-sm text-muted-foreground">
           Pemantauan dan penanganan laporan kerusakan fasilitas kamar yang masuk dari Bot Telegram penghuni.
         </p>
->>>>>>> Stashed changes
       </div>
 
       {/* Ringkasan Status Keluhan */}
@@ -624,184 +367,6 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
         </Card>
       </div>
 
-<<<<<<< Updated upstream
-      {/* TAMPILAN SISI PENGHUNI (WBS 3.1) - FORM INPUT KELUHAN */}
-      {(viewMode === 'penghuni' || viewMode === 'semua') && (
-        <Card className="border-primary/20 shadow-sm">
-          <CardHeader className="bg-muted/30 pb-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <MessageSquareWarning className="size-5 text-primary" />
-                  Laporkan Keluhan Fasilitas
-                </CardTitle>
-                <CardDescription>
-                  Laporkan kerusakan atau kendala fasilitas kamar. Keluhan langsung tercatat dengan status awal
-                  &quot;Pending&quot;.
-                </CardDescription>
-              </div>
-              <Badge variant="secondary" className="gap-1">
-                <Sparkles className="size-3 text-amber-500" />
-                Respon Cepat
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-6">
-            {/* Quick Fill Chips */}
-            <div className="mb-6 space-y-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Template keluhan (klik untuk isi otomatis):
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {TEMPLAT_KELUHAN.map((t, idx) => (
-                  <Button
-                    key={idx}
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => applyTemplat(t)}
-                  >
-                    + {t.judul}
-                  </Button>
-                ))}
-              </div>
-            </div>
-
-            <form onSubmit={handleSubmitKeluhan} className="space-y-4" noValidate>
-              {formErrors._ && (
-                <Alert variant="destructive">
-                  <AlertDescription>{formErrors._}</AlertDescription>
-                </Alert>
-              )}
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {/* Pilih Kamar — penghuni mengikuti kamar */}
-                <Field
-                  label="Kamar pelapor *"
-                  error={formErrors.kamar_id || formErrors.penghuni_id}
-                  hint={
-                    selectedKamar
-                      ? selectedKamar.penghuni_id
-                        ? `Penghuni: ${selectedKamar.penghuni_nama}`
-                        : 'Kamar kosong — tanpa penghuni'
-                      : undefined
-                  }
-                >
-                  <select
-                    value={formKamarId}
-                    onChange={(e) => setFormKamarId(e.target.value)}
-                    className={selectClass}
-                    aria-invalid={!!(formErrors.kamar_id || formErrors.penghuni_id)}
-                  >
-                    <option value="">-- Pilih Kamar --</option>
-                    {kamarList.map((k) => (
-                      <option key={k.id} value={k.id}>
-                        {k.nomor} — {k.penghuni_id ? k.penghuni_nama : 'Kamar kosong'}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-
-                {/* Kategori Fasilitas */}
-                <Field label="Kategori fasilitas" error={formErrors.kategori}>
-                  <select
-                    value={formKategori}
-                    onChange={(e) => setFormKategori(e.target.value)}
-                    className={selectClass}
-                    aria-invalid={!!formErrors.kategori}
-                  >
-                    {KATEGORI_LIST.map((kat) => (
-                      <option key={kat} value={kat}>
-                        {kat}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-
-                {/* Prioritas */}
-                <Field label="Prioritas" error={formErrors.prioritas}>
-                  <select
-                    value={formPrioritas}
-                    onChange={(e) => setFormPrioritas(e.target.value as PrioritasKeluhan)}
-                    className={selectClass}
-                    aria-invalid={!!formErrors.prioritas}
-                  >
-                    <option value="Rendah">Rendah (Bisa ditangani berkala)</option>
-                    <option value="Sedang">Sedang (Perlu penanganan biasa)</option>
-                    <option value="Tinggi">Tinggi (Mendesak / Mengganggu aktivitas)</option>
-                  </select>
-                </Field>
-              </div>
-
-              {/* Judul Keluhan */}
-              <Field label="Judul keluhan *" error={formErrors.judul}>
-                <Input
-                  placeholder="Contoh: AC menetes dan tidak dingin / Kran wastafel doll"
-                  value={formJudul}
-                  onChange={(e) => setFormJudul(e.target.value)}
-                  maxLength={120}
-                  aria-invalid={!!formErrors.judul}
-                />
-              </Field>
-
-              {/* Deskripsi Detail */}
-              <Field label="Deskripsi kerusakan & lokasi *" error={formErrors.deskripsi}>
-                <textarea
-                  placeholder="Jelaskan secara rinci kendala yang terjadi, sejak kapan terjadi, dan dampaknya..."
-                  rows={3}
-                  value={formDeskripsi}
-                  onChange={(e) => setFormDeskripsi(e.target.value)}
-                  maxLength={1000}
-                  aria-invalid={!!formErrors.deskripsi}
-                  className={textareaClass}
-                />
-              </Field>
-
-              {/* URL Foto (Opsional) */}
-              <Field
-                label="URL foto bukti kerusakan (opsional)"
-                error={formErrors.foto_url}
-                hint="Lampirkan URL foto jika ada untuk memudahkan identifikasi teknisi."
-              >
-                <Input
-                  type="url"
-                  placeholder="https://contoh.com/foto-kerusakan.jpg"
-                  value={formFotoUrl}
-                  onChange={(e) => setFormFotoUrl(e.target.value)}
-                  aria-invalid={!!formErrors.foto_url}
-                />
-              </Field>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <Button type="button" variant="outline" onClick={resetForm}>
-                  Reset Form
-                </Button>
-                <Button type="submit" disabled={submittingForm} className="gap-2">
-                  <Send className="size-4" />
-                  {submittingForm ? 'Mengirim Laporan...' : 'Kirim Laporan Keluhan'}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* TAMPILAN DAFTAR & UPDATE STATUS KELUHAN (WBS 3.2 - SISI PEMILIK) */}
-      {(viewMode === 'pemilik' || viewMode === 'semua') && (
-        <Card className="shadow-sm">
-          <CardHeader className="pb-4">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <CardTitle className="text-lg">Daftar & Penanganan Keluhan</CardTitle>
-                <CardDescription>
-                  Kelola laporan kerusakan fasilitas, perbarui status penanganan (Pending, Diproses, Selesai), dan beri
-                  catatan perbaikan.
-                </CardDescription>
-              </div>
-              <Button variant="outline" size="sm" onClick={loadData} disabled={loading} className="gap-1.5">
-                <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} />
-                Muat Ulang
-=======
       {/* Informasi Integrasi Bot Telegram (Penghuni Lapor -> Dashboard, Status Berubah -> Telegram Penghuni) */}
       <Card className="border-blue-500/20 bg-blue-500/5">
         <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -893,16 +458,11 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
                 className="h-8 text-xs"
               >
                 Semua ({totalCount})
->>>>>>> Stashed changes
               </Button>
             </div>
 
             {/* Filter Bar */}
-<<<<<<< Updated upstream
-            <div className="mt-4 flex flex-col gap-3 rounded-lg border bg-muted/20 p-3 sm:flex-row sm:items-center">
-=======
             <div className="mt-3 flex flex-col gap-3 rounded-lg border bg-muted/20 p-3 sm:flex-row sm:items-center">
->>>>>>> Stashed changes
               <div className="relative flex-1">
                 <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -915,23 +475,6 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-<<<<<<< Updated upstream
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Filter className="size-3.5" />
-                  Status:
-                </div>
-                <select
-                  aria-label="Filter status"
-                  value={filterStatus}
-                  onChange={(e) => setFilterStatus(e.target.value)}
-                  className={cn(selectClass, 'h-9 w-32 text-xs')}
-                >
-                  <option value="semua">Semua Status</option>
-                  <option value="Pending">Pending</option>
-                  <option value="Diproses">Diproses</option>
-                  <option value="Selesai">Selesai</option>
-                </select>
-=======
                 {tabTampilan !== 'riwayat' && (
                   <>
                     <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -951,7 +494,6 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
                     </select>
                   </>
                 )}
->>>>>>> Stashed changes
 
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">Prioritas:</div>
                 <select
@@ -975,11 +517,6 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
             ) : filteredList.length === 0 ? (
               <div className="py-12 text-center">
                 <CheckCircle2 className="mx-auto mb-2 size-8 text-emerald-500" />
-<<<<<<< Updated upstream
-                <p className="font-medium text-foreground">Tidak ada keluhan fasilitas yang cocok.</p>
-                <p className="text-xs text-muted-foreground">
-                  Semua keluhan telah diselesaikan atau tidak ada data pada filter ini.
-=======
                 <p className="font-medium text-foreground">
                   {tabTampilan === 'riwayat'
                     ? 'Belum ada riwayat keluhan selesai.'
@@ -989,7 +526,6 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
                   {tabTampilan === 'riwayat'
                     ? 'Keluhan yang Anda tandai Selesai akan muncul di tab ini dan bisa dihapus.'
                     : 'Semua keluhan sudah selesai (lihat di tab Riwayat Selesai) atau tidak ada data pada filter ini.'}
->>>>>>> Stashed changes
                 </p>
               </div>
             ) : (
@@ -1158,20 +694,6 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
                           Ubah Status & Catatan
                         </Button>
 
-<<<<<<< Updated upstream
-                        {/* WhatsApp Notifikasi Penghuni (kamar kosong tidak punya nomor) */}
-                        {k.penghuni_no_hp && (
-                          <Button
-                            asChild
-                            size="sm"
-                            variant="outline"
-                            className="h-8 gap-1.5 text-xs text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
-                          >
-                            <a href={linkWhatsApp(k)} target="_blank" rel="noopener noreferrer">
-                              <MessageSquare className="size-3.5" />
-                              WA Penghuni
-                            </a>
-=======
                         {/* Kirim Update Keluhan ke Telegram Penghuni */}
                         {k.penghuni_id && (
                           <Button
@@ -1197,7 +719,6 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
                           >
                             <Trash2 className="size-3.5" />
                             Hapus Riwayat
->>>>>>> Stashed changes
                           </Button>
                         )}
                       </div>
@@ -1218,10 +739,6 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
             )}
           </CardContent>
         </Card>
-<<<<<<< Updated upstream
-      )}
-=======
->>>>>>> Stashed changes
 
       {/* MODAL UPDATE STATUS KELUHAN (WBS 3.2) */}
       {modalKeluhan && (
@@ -1272,11 +789,7 @@ export default function KeluhanPage({ notify, onChanged }: KeluhanPageProps) {
             <Field
               label="Catatan penanganan & tindak lanjut"
               error={modalErrors.catatan_penanganan}
-<<<<<<< Updated upstream
-              hint="Catatan tersimpan di riwayat dan dapat diteruskan ke penghuni lewat WhatsApp."
-=======
               hint="Catatan tersimpan di riwayat dan dikirim otomatis ke Telegram penghuni."
->>>>>>> Stashed changes
             >
               <textarea
                 placeholder="Contoh: Teknisi dijadwalkan datang jam 14.00 WIB untuk mengganti seal kran."
